@@ -8,6 +8,7 @@ export interface ChatMessage {
   timestamp: string;
   model?: string;
   isStreaming?: boolean;    // 是否正在流式输出中
+  type?: 'text' | 'plan_card';  // 消息类型
 }
 
 export interface ChatSession {
@@ -90,6 +91,9 @@ interface ChatState {
 
 const defaultModel = 'mimo';
 const defaultSkill = 'jp-school';
+
+// Keywords that indicate a creation request
+const CREATION_KEYWORDS = ['帮我做', '帮我生成', '帮我创作', '做一个', '生成一个', '创作一个', '制作', '漫剧', '短剧', '剧本'];
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
@@ -275,9 +279,13 @@ async function fetchStreamResponse(
   };
 
   const finishStream = () => {
-    useChatStore.setState((s) => ({
-      isGenerating: false,
-      sessions: s.sessions.map((ss) => {
+    useChatStore.setState((s) => {
+      // Check if this looks like a creation request — inject plan card
+      const session = s.sessions.find((ss) => ss.id === sessionId);
+      const userMsg = session?.messages.find((m) => m.role === 'user' && !m.type);
+      const isCreationRequest = userMsg && CREATION_KEYWORDS.some((kw) => userMsg.content.includes(kw));
+
+      let updatedSessions = s.sessions.map((ss) => {
         if (ss.id !== sessionId) return ss;
         return {
           ...ss,
@@ -285,8 +293,28 @@ async function fetchStreamResponse(
             m.id === aiMsgId ? { ...m, isStreaming: false } : m
           ),
         };
-      }),
-    }));
+      });
+
+      // Inject plan card if creation request
+      if (isCreationRequest) {
+        const planCardMsg: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          content: '',
+          type: 'plan_card',
+          timestamp: (() => {
+            const n = new Date();
+            return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+          })(),
+        };
+        updatedSessions = updatedSessions.map((ss) => {
+          if (ss.id !== sessionId) return ss;
+          return { ...ss, messages: [...ss.messages, planCardMsg] };
+        });
+      }
+
+      return { isGenerating: false, sessions: updatedSessions };
+    });
     currentAbortController = null;
   };
 

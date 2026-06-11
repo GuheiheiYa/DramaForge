@@ -165,7 +165,7 @@ function ThinkingPanel({ thinking, isStreaming }: { thinking: string; isStreamin
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onModeSelect?: (mode: PipelineMode) => void }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); toastSuccess('已复制到剪贴板'); }).catch(() => toastInfo('复制失败'));
@@ -174,6 +174,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
   const hasThinking = !!message.thinking;
   const isEmpty = !message.content && !hasThinking;
+  const isPlanCard = message.type === 'plan_card';
+
+  // Plan card — render ModeSelectorCard
+  if (isPlanCard) {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+          <Bot size={18} className="text-white" />
+        </div>
+        <ModeSelectorCard title={message.content || 'AI 创作'} onSelect={onModeSelect} />
+      </div>
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0, 0, 0.2, 1] as [number, number, number, number] }}
@@ -836,7 +849,7 @@ export default function Chat() {
               <div className="h-full flex flex-col">
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
-                    {allMessages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+                    {allMessages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
                     {isGenerating && <TypingIndicator />}
                     <div ref={messagesEndRef} />
                   </div>
@@ -854,7 +867,7 @@ export default function Chat() {
             <div className="flex-1 overflow-y-auto min-h-0">
               {currentSessionId && messages.length > 0 ? (
                 <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
-                  {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+                  {messages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
                   {isGenerating && <TypingIndicator />}
                   <div ref={messagesEndRef} />
                 </div>
