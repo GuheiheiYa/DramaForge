@@ -1,6 +1,7 @@
-"""LLM 服务封装 — DeepSeek / Claude / GPT 统一调用接口。"""
+"""LLM 服务封装 — DeepSeek / MiMo 统一调用接口（支持流式）。"""
 
 from abc import ABC, abstractmethod
+from typing import AsyncIterator
 
 import httpx
 
@@ -11,8 +12,13 @@ class LLMProvider(ABC):
     """LLM 提供者抽象基类。"""
 
     @abstractmethod
-    async def chat(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096) -> str:
+    async def chat(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096, deep_think: bool = False) -> str:
         """发送对话请求，返回 AI 回复文本。"""
+        ...
+
+    @abstractmethod
+    async def chat_stream(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096, deep_think: bool = False) -> AsyncIterator[dict]:
+        """流式对话，yield {type: "thinking"|"content"|"done", data: "..."}。"""
         ...
 
 
@@ -24,7 +30,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self.api_key = api_key
         self.default_model = default_model
 
-    async def chat(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096) -> str:
+    async def chat(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096, deep_think: bool = False) -> str:
         model = model or self.default_model
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
@@ -38,6 +44,61 @@ class OpenAICompatibleProvider(LLMProvider):
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
+
+    async def chat_stream(self, messages: list[dict], model: str = "", temperature: float = 0.7, max_tokens: int = 4096, deep_think: bool = False) -> AsyncIterator[dict]:
+        """SSE 流式调用，解析 thinking 和 content。"""
+        model = model or self.default_model
+        body = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if deep_think:
+            body["extra_body"] = {"enable_thinking": True}
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=10)) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            ) as resp:
+                resp.raise_for_status()
+                thinking_buf = ""
+                content_buf = ""
+
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:].strip()
+                    if payload == "[DONE]":
+                        yield {"type": "done", "data": ""}
+                        break
+
+                    import json
+                    try:
+                        chunk = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+
+                    # Thinking content (MiMo / DeepSeek R1 style)
+                    reasoning = delta.get("reasoning_content") or delta.get("thinking") or ""
+                    if reasoning:
+                        thinking_buf += reasoning
+                        yield {"type": "thinking", "data": reasoning}
+
+                    # Normal content
+                    text = delta.get("content") or ""
+                    if text:
+                        content_buf += text
+                        yield {"type": "content", "data": text}
 
 
 # Provider 注册表

@@ -26,6 +26,8 @@ class ChatRequest(BaseModel):
     model: str = Field(default="mimo", description="Provider 名称")
     temperature: float = Field(default=0.7, ge=0, le=2)
     max_tokens: int = Field(default=4096, ge=1, le=32768)
+    deep_think: bool = Field(default=False, description="是否开启深度思考")
+    stream: bool = Field(default=False, description="是否流式输出")
 
 class ChatResponse(BaseModel):
     reply: str
@@ -33,7 +35,7 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_ai(req: ChatRequest):
-    """通用 AI 对话接口，转发到 LLM Provider。"""
+    """通用 AI 对话接口，非流式。"""
     try:
         provider = get_provider(req.model)
     except ValueError:
@@ -46,11 +48,47 @@ async def chat_with_ai(req: ChatRequest):
             messages=messages,
             temperature=req.temperature,
             max_tokens=req.max_tokens,
+            deep_think=req.deep_think,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM 调用失败: {str(e)}")
 
     return ChatResponse(reply=reply)
+
+
+@router.post("/chat/stream")
+async def chat_with_ai_stream(req: ChatRequest):
+    """流式 AI 对话接口（SSE）。返回 thinking + content 分块。"""
+    import json as _json
+
+    try:
+        provider = get_provider(req.model)
+    except ValueError:
+        provider = get_provider("mimo")
+
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+
+    async def event_generator():
+        try:
+            async for chunk in provider.chat_stream(
+                messages=messages,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+                deep_think=req.deep_think,
+            ):
+                yield f"data: {_json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {_json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 # Pipeline 实例存储（后续替换为 Redis）
 _pipelines: dict[str, dict] = {}

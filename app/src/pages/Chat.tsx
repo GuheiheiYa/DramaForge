@@ -6,6 +6,7 @@ import {
   Send, Plus, Sparkles, Bot, User, Copy, RefreshCw, Check,
   Image as ImageIcon, FileVideo, Paperclip, ChevronDown, Mic,
   X, AlertCircle, RotateCcw, SkipForward, Eye, Rocket, Hand, EyeOff,
+  Brain, StopCircle, ChevronUp, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore, modelOptions, skillOptions, type ChatMessage } from '@/store/useChatStore';
@@ -36,8 +37,10 @@ const quickHints = [
 function ModelSkillBar() {
   const currentModel = useChatStore((s) => s.currentModel);
   const currentSkill = useChatStore((s) => s.currentSkill);
+  const deepThink = useChatStore((s) => s.deepThink);
   const setModel = useChatStore((s) => s.setModel);
   const setSkill = useChatStore((s) => s.setSkill);
+  const setDeepThink = useChatStore((s) => s.setDeepThink);
   const [modelOpen, setModelOpen] = useState(false);
   const [skillOpen, setSkillOpen] = useState(false);
   const modelRef = useRef<HTMLDivElement>(null);
@@ -105,6 +108,21 @@ function ModelSkillBar() {
           </motion.div>
         )}</AnimatePresence>
       </div>
+
+      {/* Deep Think Toggle */}
+      <button
+        onClick={() => setDeepThink(!deepThink)}
+        className={cn(
+          'h-7 px-2.5 rounded-md border text-[11px] flex items-center gap-1.5 transition-all',
+          deepThink
+            ? 'border-[#7A6B8A] bg-[#F5F0FA] text-[#7A6B8A]'
+            : 'border-[#DEDBD8] text-[#A8A39E] hover:border-[#C5C1BC] hover:text-[#6E6862]'
+        )}
+        title={deepThink ? '深度思考已开启' : '深度思考已关闭'}
+      >
+        <Brain size={13} />
+        <span className="hidden sm:inline">深度思考</span>
+      </button>
     </div>
   );
 }
@@ -112,27 +130,85 @@ function ModelSkillBar() {
 // ═══════════════════════════════════════════════════
 // Message Bubble
 // ═══════════════════════════════════════════════════
+function ThinkingPanel({ thinking, isStreaming }: { thinking: string; isStreaming?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!thinking) return null;
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-[11px] text-[#7A6B8A] hover:text-[#5A4D6B] transition-colors px-2 py-1 rounded-md hover:bg-[#F5F0FA]"
+      >
+        <Brain size={12} />
+        <span>思考过程</span>
+        {isStreaming && <Loader2 size={10} className="animate-spin" />}
+        <ChevronDown size={10} className={cn('transition-transform', expanded && 'rotate-180')} />
+      </button>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-1 px-3 py-2.5 bg-[#F8F5FA] rounded-lg border border-[#E8E0F0] text-[12px] text-[#6E6862] leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+              {thinking}
+              {isStreaming && <span className="inline-block w-1.5 h-3.5 bg-[#7A6B8A] ml-0.5 animate-pulse" />}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); toastSuccess('已复制到剪贴板'); }).catch(() => toastInfo('复制失败'));
   };
+
+  const isUser = message.role === 'user';
+  const hasThinking = !!message.thinking;
+  const isEmpty = !message.content && !hasThinking;
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0, 0, 0.2, 1] as [number, number, number, number] }}
-      className={cn('flex gap-3 group', message.role === 'user' ? 'justify-end' : 'justify-start')}>
-      {message.role === 'assistant' && (
+      className={cn('flex gap-3 group', isUser ? 'justify-end' : 'justify-start')}>
+      {!isUser && (
         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
           <Bot size={18} className="text-white" />
         </div>
       )}
-      <div className={cn('max-w-[75%] min-w-0', message.role === 'user' && 'order-1')}>
-        <div className={cn('px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed whitespace-pre-wrap',
-          message.role === 'user' ? 'bg-[#FBF7F4] text-[#383431] rounded-br-sm border border-[#F0E8DE]' : 'bg-white text-[#383431] rounded-bl-sm shadow-sm border border-[#EFEDEB]')}>
-          {message.content}
-        </div>
-        <div className={cn('flex items-center mt-1.5', message.role === 'user' ? 'justify-end' : 'justify-start')}>
+      <div className={cn('max-w-[75%] min-w-0', isUser && 'order-1')}>
+        {/* Thinking panel (only for assistant) */}
+        {!isUser && hasThinking && (
+          <ThinkingPanel thinking={message.thinking!} isStreaming={message.isStreaming} />
+        )}
+
+        {/* Message content */}
+        {(!isEmpty || !message.isStreaming) && (
+          <div className={cn('px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed whitespace-pre-wrap',
+            isUser ? 'bg-[#FBF7F4] text-[#383431] rounded-br-sm border border-[#F0E8DE]' : 'bg-white text-[#383431] rounded-bl-sm shadow-sm border border-[#EFEDEB]')}>
+            {message.content || (message.isStreaming ? '' : '...')}
+            {message.isStreaming && !message.content && !hasThinking && (
+              <span className="inline-flex items-center gap-1 text-[12px] text-[#A8A39E]">
+                <Loader2 size={12} className="animate-spin" /> 思考中...
+              </span>
+            )}
+            {message.isStreaming && message.content && (
+              <span className="inline-block w-1.5 h-3.5 bg-[#A8835F] ml-0.5 animate-pulse" />
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className={cn('flex items-center mt-1.5', isUser ? 'justify-end' : 'justify-start')}>
           <span className="text-[10px] text-[#C5C1BC]">{message.timestamp}</span>
-          {message.role === 'assistant' && (
+          {!isUser && !message.isStreaming && message.content && (
             <div className="hidden group-hover:flex items-center gap-0.5 ml-2 bg-white rounded-lg border border-[#EFEDEB] p-0.5 shadow-sm">
               <button onClick={() => toastSuccess('已采纳')} className="p-1 rounded hover:bg-[#F0F5F0] text-[#A8A39E] hover:text-[#5B8C5A] transition-colors"><Check size={12} /></button>
               <button onClick={() => toastInfo('已重新生成')} className="p-1 rounded hover:bg-[#FBF7F4] text-[#A8A39E] hover:text-[#A8835F] transition-colors"><RefreshCw size={12} /></button>
@@ -143,7 +219,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           )}
         </div>
       </div>
-      {message.role === 'user' && (
+      {isUser && (
         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#EAD8C8] to-[#D9BFA8] flex items-center justify-center shrink-0 mt-0.5 shadow-sm order-2">
           <User size={18} className="text-[#8E6A48]" />
         </div>
@@ -202,6 +278,7 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isGenerating = useChatStore((s) => s.isGenerating);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const cancelGeneration = useChatStore((s) => s.cancelGeneration);
   const createSession = useChatStore((s) => s.createSession);
   const currentModel = useChatStore((s) => s.currentModel);
   const currentSkill = useChatStore((s) => s.currentSkill);
@@ -269,10 +346,18 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
             <div className="flex items-center gap-1.5 text-[10px] text-[#C5C1BC]">
               <span>{selectedModel?.label}</span><span>·</span><span>{selectedSkill?.label}</span>
             </div>
-            <motion.button onClick={handleSend} disabled={!input.trim() || isGenerating} whileTap={{ scale: 0.9 }}
-              className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#A8835F] to-[#8E6A48] hover:from-[#9A7350] hover:to-[#7D5A3A] disabled:from-[#DEDBD8] disabled:to-[#DEDBD8] disabled:cursor-not-allowed flex items-center justify-center transition-all shadow-sm">
-              <Send size={15} className="text-white" />
-            </motion.button>
+            {isGenerating ? (
+              <motion.button onClick={cancelGeneration} whileTap={{ scale: 0.9 }}
+                className="w-9 h-9 rounded-xl bg-[#B85C50] hover:bg-[#A34E43] flex items-center justify-center transition-all shadow-sm"
+                title="停止生成">
+                <StopCircle size={16} className="text-white" />
+              </motion.button>
+            ) : (
+              <motion.button onClick={handleSend} disabled={!input.trim()} whileTap={{ scale: 0.9 }}
+                className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#A8835F] to-[#8E6A48] hover:from-[#9A7350] hover:to-[#7D5A3A] disabled:from-[#DEDBD8] disabled:to-[#DEDBD8] disabled:cursor-not-allowed flex items-center justify-center transition-all shadow-sm">
+                <Send size={15} className="text-white" />
+              </motion.button>
+            )}
           </div>
         </div>
         <p className="text-[10px] text-[#C5C1BC] text-center mt-2">Enter 发送 · Shift+Enter 换行</p>

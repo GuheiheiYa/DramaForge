@@ -4,8 +4,10 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  thinking?: string;       // AI 思考过程
   timestamp: string;
   model?: string;
+  isStreaming?: boolean;    // 是否正在流式输出中
 }
 
 export interface ChatSession {
@@ -19,6 +21,7 @@ export interface ChatSession {
 }
 
 export const modelOptions = [
+  { id: 'mimo', label: 'MiMo', provider: 'Xiaomi', cost: '免费', desc: '小米 MiMo 大模型' },
   { id: 'deepseek-v3', label: 'DeepSeek-V3', provider: 'DeepSeek', cost: '¥2-4/百万Token', desc: '性价比最高，中文效果佳' },
   { id: 'claude-4', label: 'Claude 4', provider: 'Anthropic', cost: '¥25-30/百万Token', desc: '剧本冲突和对话打磨最强' },
   { id: 'gpt-5', label: 'GPT-5', provider: 'OpenAI', cost: '¥20-25/百万Token', desc: '综合能力均衡，IP改编' },
@@ -36,66 +39,20 @@ export const skillOptions = [
   { id: 'workplace', label: '职场励志短剧', type: '短剧', desc: '职场、励志、成长' },
 ];
 
-// Mock AI responses for different message types
-const mockAIResponses = [
-  '好的，我来帮你生成这个创意。以下是一个基于你描述的故事框架：\n\n## 故事大纲\n在一个普通的高中校园里，转学生小雨拥有一个秘密——她可以通过触碰他人看到他们的记忆碎片。当她发现班上最受欢迎的男生背后隐藏着一个惊人的秘密时，她决定揭开真相...\n\n## 核心冲突\n- 主角的超能力与道德困境\n- 表面完美的校园生活 vs 隐藏的真相\n\n需要我继续细化某个部分吗？',
-  '这是一个不错的创意方向！我来帮你扩展一下角色设定：\n\n## 主角：林小雨\n- 性格：内向但正义感强\n- 特长：绘画、记忆读取\n- 成长弧线：从逃避能力到接受并利用它帮助他人\n\n## 配角：陈明\n- 表面：阳光学霸\n- 秘密：家庭变故导致他不得不...\n\n要我继续生成完整剧本吗？',
-  '我建议从以下几个角度来优化这段剧情：\n\n1. **增加悬念**：在开场加入一个小的神秘事件\n2. **丰富对话**：让角色间的对话更有层次感\n3. **视觉化描写**：用更具体的画面感语言替代抽象描述\n\n具体修改如下：\n\n> 「窗外的雨不停地下，教室里的气氛却比天气还要沉闷。黑板上密密麻麻的公式像是一道道锁链，将每个人的注意力牢牢禁锢。」',
-  '根据你选择的「日式校园漫剧」SKILL，我推荐以下分镜方案：\n\n**第1幕：转学第一天**\n- 分镜1：校园全景，樱花飘落（远景）\n- 分镜2：主角站在教室门口（中景）\n- 分镜3：全班同学转头看向她（特写）\n- 分镜4：主角深呼吸，迈出第一步（近景）\n\n这样开篇可以快速建立氛围，你觉得如何？',
-  '关于你提到的角色一致性，这里有几个实用技巧：\n\n1. **角色设定表**：在开始创作前，先完善角色的外貌、性格、习惯等细节\n2. **参考图管理**：为每个角色保存多角度参考图\n3. **提示词模板**：在每次生成时复用相同的人物描述\n\n目前即梦AI的「角色ID」功能可以很好地解决这个问题，你可以在角色管理台中先上传角色设计图。',
-];
-
 function generateId() {
   return `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-function mockAIStream(content: string, sessionId: string, addMessage: (sessionId: string, msg: ChatMessage) => void, setGenerating: (v: boolean) => void) {
-  setGenerating(true);
-  const delay = 1500 + Math.random() * 2000;
-  setTimeout(() => {
-    const response = mockAIResponses[Math.floor(Math.random() * mockAIResponses.length)];
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const aiMsg: ChatMessage = {
-      id: generateId(),
-      role: 'assistant',
-      content: response,
-      timestamp: timeStr,
-    };
-    addMessage(sessionId, aiMsg);
-    setGenerating(false);
-  }, delay);
-}
-
-interface ChatState {
-  sessions: ChatSession[];
-  currentSessionId: string | null;
-  currentModel: string;
-  currentSkill: string;
-  isGenerating: boolean;
-
-  createSession: () => string;
-  deleteSession: (id: string) => void;
-  selectSession: (id: string) => void;
-  sendMessage: (content: string) => void;
-  setModel: (model: string) => void;
-  setSkill: (skill: string) => void;
-  getCurrentSession: () => ChatSession | null;
-}
-
-const defaultModel = 'mimo';
-const defaultSkill = 'jp-school';
-
+// ─── API ───
 const API_BASE = 'http://localhost:8001/api/v1';
 
-// Map frontend model IDs to backend provider names
 const modelToProvider: Record<string, string> = {
   'mimo': 'mimo',
   'deepseek-v3': 'deepseek',
-  'claude-4': 'deepseek',  // fallback
-  'gpt-5': 'deepseek',     // fallback
-  'kimi': 'deepseek',      // fallback
-  'gemini': 'deepseek',    // fallback
+  'claude-4': 'deepseek',
+  'gpt-5': 'deepseek',
+  'kimi': 'deepseek',
+  'gemini': 'deepseek',
 };
 
 const skillToConfig: Record<string, { prompt: string; type: string }> = {
@@ -108,36 +65,31 @@ const skillToConfig: Record<string, { prompt: string; type: string }> = {
   'workplace': { prompt: '职场励志短剧，真实接地气，注重成长和逆袭', type: '短剧' },
 };
 
-async function fetchAIResponse(content: string, modelId: string, skillId: string): Promise<string> {
-  const provider = modelToProvider[modelId] || 'mimo';
-  const skillConfig = skillToConfig[skillId] || skillToConfig['jp-school'];
+// AbortController for cancelling requests
+let currentAbortController: AbortController | null = null;
 
-  const systemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
-你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
-回复要详细、专业、有创意。如果用户要求生成完整剧本或制作漫剧，请给出结构化的内容。`;
+// ─── State ───
+interface ChatState {
+  sessions: ChatSession[];
+  currentSessionId: string | null;
+  currentModel: string;
+  currentSkill: string;
+  isGenerating: boolean;
+  deepThink: boolean;
 
-  const resp = await fetch(`${API_BASE}/pipeline/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content },
-      ],
-      model: provider,
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`API ${resp.status}: ${err}`);
-  }
-
-  const data = await resp.json();
-  return data.reply || data.message || JSON.stringify(data);
+  createSession: () => string;
+  deleteSession: (id: string) => void;
+  selectSession: (id: string) => void;
+  sendMessage: (content: string) => void;
+  cancelGeneration: () => void;
+  setModel: (model: string) => void;
+  setSkill: (skill: string) => void;
+  setDeepThink: (v: boolean) => void;
+  getCurrentSession: () => ChatSession | null;
 }
+
+const defaultModel = 'mimo';
+const defaultSkill = 'jp-school';
 
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
@@ -145,6 +97,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentModel: defaultModel,
   currentSkill: defaultSkill,
   isGenerating: false,
+  deepThink: false,
 
   createSession: () => {
     const now = new Date();
@@ -194,7 +147,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!content.trim() || state.isGenerating) return;
 
     let sessionId = state.currentSessionId;
-    // Auto-create session if none exists
     if (!sessionId) {
       sessionId = state.createSession();
     }
@@ -209,17 +161,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: timeStr,
     };
 
-    // Update session title from first message
     const session = get().sessions.find((s) => s.id === sessionId);
     const isFirstMessage = session && session.messages.length === 0;
 
+    // Add user message + placeholder AI message (streaming)
+    const aiMsgId = generateId();
+    const aiPlaceholder: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      thinking: '',
+      timestamp: timeStr,
+      isStreaming: true,
+    };
+
     set((s) => ({
+      isGenerating: true,
       sessions: s.sessions.map((ss) => {
         if (ss.id !== sessionId) return ss;
         return {
           ...ss,
           title: isFirstMessage ? content.trim().slice(0, 30) + (content.trim().length > 30 ? '...' : '') : ss.title,
-          messages: [...ss.messages, userMsg],
+          messages: [...ss.messages, userMsg, aiPlaceholder],
           updatedAt: timeStr,
           model: s.currentModel,
           skill: s.currentSkill,
@@ -227,50 +190,183 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }),
     }));
 
-    // Call real AI API
-    set({ isGenerating: true });
-    fetchAIResponse(content.trim(), state.currentModel, state.currentSkill)
-      .then((response) => {
-        const now2 = new Date();
-        const timeStr2 = `${now2.getHours().toString().padStart(2, '0')}:${now2.getMinutes().toString().padStart(2, '0')}`;
-        const aiMsg: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: response,
-          timestamp: timeStr2,
-        };
-        set((s) => ({
-          isGenerating: false,
-          sessions: s.sessions.map((ss) => {
-            if (ss.id !== sessionId) return ss;
-            return { ...ss, messages: [...ss.messages, aiMsg] };
-          }),
-        }));
-      })
-      .catch((err) => {
-        const now2 = new Date();
-        const timeStr2 = `${now2.getHours().toString().padStart(2, '0')}:${now2.getMinutes().toString().padStart(2, '0')}`;
-        const errMsg: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: `请求失败：${err.message}\n\n请检查后端是否已启动（http://localhost:8001）`,
-          timestamp: timeStr2,
-        };
-        set((s) => ({
-          isGenerating: false,
-          sessions: s.sessions.map((ss) => {
-            if (ss.id !== sessionId) return ss;
-            return { ...ss, messages: [...ss.messages, errMsg] };
-          }),
-        }));
-      });
+    // Start streaming
+    const provider = modelToProvider[state.currentModel] || 'mimo';
+    const skillConfig = skillToConfig[state.currentSkill] || skillToConfig['jp-school'];
+
+    const systemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
+你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
+回复要详细、专业、有创意。如果用户要求生成完整剧本或制作漫剧，请给出结构化的内容。`;
+
+    const abortController = new AbortController();
+    currentAbortController = abortController;
+
+    fetchStreamResponse(
+      sessionId,
+      aiMsgId,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: content.trim() },
+      ],
+      provider,
+      state.deepThink,
+      abortController.signal,
+    );
+  },
+
+  cancelGeneration: () => {
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+    set((s) => {
+      const sessionId = s.currentSessionId;
+      if (!sessionId) return { isGenerating: false };
+      return {
+        isGenerating: false,
+        sessions: s.sessions.map((ss) => {
+          if (ss.id !== sessionId) return ss;
+          return {
+            ...ss,
+            messages: ss.messages.map((m) =>
+              m.isStreaming ? { ...m, isStreaming: false, content: m.content || '（已取消）' } : m
+            ),
+          };
+        }),
+      };
+    });
   },
 
   setModel: (model) => set({ currentModel: model }),
   setSkill: (skill) => set({ currentSkill: skill }),
+  setDeepThink: (v) => set({ deepThink: v }),
 
   getCurrentSession: () => {
     const state = get();
     return state.sessions.find((s) => s.id === state.currentSessionId) ?? null;
   },
 }));
+
+// ─── Streaming fetch ───
+async function fetchStreamResponse(
+  sessionId: string,
+  aiMsgId: string,
+  messages: Array<{ role: string; content: string }>,
+  model: string,
+  deepThink: boolean,
+  signal: AbortSignal,
+) {
+  const addChunk = (type: 'thinking' | 'content', data: string) => {
+    useChatStore.setState((s) => ({
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        return {
+          ...ss,
+          messages: ss.messages.map((m) => {
+            if (m.id !== aiMsgId) return m;
+            if (type === 'thinking') {
+              return { ...m, thinking: (m.thinking || '') + data };
+            }
+            return { ...m, content: m.content + data };
+          }),
+        };
+      }),
+    }));
+  };
+
+  const finishStream = () => {
+    useChatStore.setState((s) => ({
+      isGenerating: false,
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        return {
+          ...ss,
+          messages: ss.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, isStreaming: false } : m
+          ),
+        };
+      }),
+    }));
+    currentAbortController = null;
+  };
+
+  const setError = (errMsg: string) => {
+    useChatStore.setState((s) => ({
+      isGenerating: false,
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        return {
+          ...ss,
+          messages: ss.messages.map((m) => {
+            if (m.id !== aiMsgId) return m;
+            return { ...m, content: m.content || errMsg, isStreaming: false };
+          }),
+        };
+      }),
+    }));
+    currentAbortController = null;
+  };
+
+  try {
+    const resp = await fetch(`${API_BASE}/pipeline/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, model, deep_think: deepThink, stream: true }),
+      signal,
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      setError(`API ${resp.status}: ${errText}`);
+      return;
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) {
+      setError('无法读取响应流');
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (!payload) continue;
+
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk.type === 'thinking') {
+            addChunk('thinking', chunk.data);
+          } else if (chunk.type === 'content') {
+            addChunk('content', chunk.data);
+          } else if (chunk.type === 'done') {
+            // Stream complete
+          } else if (chunk.type === 'error') {
+            setError(chunk.data);
+            return;
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      }
+    }
+
+    finishStream();
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      // User cancelled, already handled by cancelGeneration
+      return;
+    }
+    setError(`请求失败：${err.message}。请检查后端是否已启动（http://localhost:8001）`);
+  }
+}
