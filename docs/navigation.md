@@ -20,7 +20,10 @@ DramaForge/
 │   │   ├── services/             # 业务服务
 │   │   │   ├── llm_service.py    # LLM 调用封装
 │   │   │   └── pipeline_service.py # Pipeline 编排
-│   │   ├── models/schemas.py     # Pydantic 数据模型
+│   │   ├── models/
+│   │   │   ├── schemas.py        # Pydantic 数据模型
+│   │   │   └── db_models.py      # SQLAlchemy ORM 模型
+│   │   ├── database.py           # SQLite 数据库引擎
 │   │   ├── core/celery_app.py    # Celery 配置
 │   │   ├── tasks/pipeline_runner.py # 异步任务
 │   │   ├── config.py             # 配置管理
@@ -43,7 +46,9 @@ DramaForge/
 │   │   │   ├── use-mobile.ts     # 移动端检测
 │   │   │   └── useToast.ts       # Toast 封装
 │   │   ├── lib/                  # 工具函数
-│   │   │   └── utils.ts          # cn() 等通用工具
+│   │   │   ├── utils.ts          # cn() 等通用工具
+│   │   │   ├── api.ts            # 前端 API 服务层（剧本/角色/ Pipeline）
+│   │   │   └── pipeline-data-extractor.ts # Pipeline 数据提取器（从 AI 回复提取剧本/角色）
 │   │   ├── pages/                # 页面组件
 │   │   │   ├── AssetLibrary.tsx      # 素材库 [F-007]
 │   │   │   ├── CharacterManager.tsx  # 角色管理台 [F-003]

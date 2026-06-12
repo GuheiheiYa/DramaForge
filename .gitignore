@@ -34,7 +34,12 @@ npm-debug.log*
 # Uploads
 backend/uploads/
 
+# Database
+backend/*.db
+
 # Python
 .pytest_cache/
 .coverage
 htmlcov/
+.playwright-mcp/
+

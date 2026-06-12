@@ -201,7 +201,7 @@ fetchStreamResponse(sessionId, aiMsgId);
 
 ## 验证步骤
 
-1. 启动后端 `cd backend && python -m uvicorn app.main:app --port 8888`
+1. 启动后端 `cd backend && python -m uvicorn app.main:app --port 7777`
 2. 用 curl 测试 SSE 端点确认后端正常
 3. 修复前端代码
 4. 用户发送 "帮我做一个校园悬疑漫剧"

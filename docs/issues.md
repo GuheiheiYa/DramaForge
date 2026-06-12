@@ -53,3 +53,12 @@
 ### [ISS-005] Pipeline 面板不显示 + Markdown 不渲染
 - 解决方案: 修复 API 契约、错误处理、渲染条件、模型名映射
 - 解决时间: 2026-06-12 01:40:00
+
+### [ISS-006] simulatePipeline 使用硬编码 mock 数据
+- **关联需求**: [R-012]
+- **关联功能**: [F-012] Chat Studio
+- **问题描述**: simulatePipeline 中的剧本和角色数据完全是硬编码的，与 AI 回复内容无关；handleModeSelect 标题硬编码为"记忆碎片"
+- **解决方案**: 创建 pipeline-data-extractor.ts 从 AI 回复中提取结构化数据，finishStream 自动提取并存入 store，simulatePipeline 使用提取数据
+- **状态**: closed
+- **记录时间**: 2026-06-12 10:00:00
+- **关闭时间**: 2026-06-12 10:30:00

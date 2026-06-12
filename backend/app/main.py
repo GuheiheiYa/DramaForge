@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api.v1 import projects, scripts, characters, storyboards, generation, skills, pipeline
+from app.database import init_db
 
 
 @asynccontextmanager
@@ -14,6 +15,8 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
     # 启动时
     print(f"[START] {settings.APP_NAME} v{settings.APP_VERSION}")
+    await init_db()
+    print("[DB] SQLite 数据库已初始化")
     yield
     # 关闭时
     print(f"[STOP] {settings.APP_NAME}")

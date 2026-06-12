@@ -19,6 +19,7 @@ import {
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 import ReactMarkdown from 'react-markdown';
+import { savePipelineScript, savePipelineCharacters } from '@/lib/api';
 
 // ═══════════════════════════════════════════════════
 // Quick fill hints
@@ -632,7 +633,7 @@ function EmptyStep({ message }: { message: string }) {
 // ═══════════════════════════════════════════════════
 // Mode Selector Card
 // ═══════════════════════════════════════════════════
-function ModeSelectorCard({ title, onSelect }: { title: string; onSelect: (mode: PipelineMode) => void }) {
+function ModeSelectorCard({ title, onSelect }: { title: string; onSelect?: (mode: PipelineMode) => void }) {
   const modes: Array<{ key: PipelineMode; icon: React.ReactNode; label: string; desc: string }> = [
     { key: 'auto', icon: <Rocket size={16} />, label: '全自动', desc: '一口气执行完所有步骤' },
     { key: 'confirm', icon: <Hand size={16} />, label: '每步确认', desc: '每完成一步暂停确认' },
@@ -655,7 +656,7 @@ function ModeSelectorCard({ title, onSelect }: { title: string; onSelect: (mode:
       <p className="text-[11px] text-[#6E6862] mb-2 font-medium">选择执行模式：</p>
       <div className="grid grid-cols-3 gap-2">
         {modes.map((m) => (
-          <button key={m.key} onClick={() => onSelect(m.key)}
+          <button key={m.key} onClick={() => onSelect?.(m.key)}
             className="flex flex-col items-center gap-1.5 p-3 rounded-xl border border-[#DEDBD8] hover:border-[#A8835F] hover:bg-[#FBF7F4] transition-all">
             <span className="text-[#A8835F]">{m.icon}</span>
             <span className="text-[11px] font-semibold text-[#383431]">{m.label}</span>
@@ -737,47 +738,193 @@ export default function Chat() {
     else setTimeout(() => sendMessage(text), 100);
   };
 
+  // 从 ChatStore 中获取从 AI 回复提取的数据
+  const extractedScript = useChatStore((s) => s.extractedScript);
+  const extractedCharacters = useChatStore((s) => s.extractedCharacters);
+  const extractedTitle = useChatStore((s) => s.extractedTitle);
+
   const handleModeSelect = (mode: PipelineMode) => {
-    const title = '记忆碎片'; // Mock title
+    // 使用从 AI 回复中提取的标题，而非硬编码
+    const title = extractedTitle || '创作项目';
     startPipeline(title, mode);
     toastSuccess(`已启动「${mode === 'auto' ? '全自动' : mode === 'confirm' ? '每步确认' : '仅预览'}」模式`);
-    // Simulate pipeline progress
+    // 模拟 Pipeline 进度 — 使用从 AI 回复提取的数据
     simulatePipeline();
   };
 
   const simulatePipeline = () => {
     const store = usePipelineStore.getState();
-    // Mock: fill script data after 2s
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') return;
-      store.updateStepData(0, {
-        episodes: [
-          { id: 'ep1', number: 1, title: '转学第一天', scenes: [
-            { id: 's1', title: '樱花走廊', summary: '林小雨站在教室门口，深吸一口气推开门...', location: '学校走廊', timeTag: '清晨' },
-            { id: 's2', title: '记忆闪现', summary: '小雨碰到同桌的手，眼前闪过一个模糊的画面...', location: '教室', timeTag: '上午' },
-          ]},
-          { id: 'ep2', number: 2, title: '神秘失踪', scenes: [
-            { id: 's3', title: '深夜校园', summary: '小雨独自在校园里寻找线索...', location: '校园', timeTag: '深夜' },
-          ]},
-        ]
-      } as ScriptData);
+    console.log('[Pipeline] 开始模拟, extractedScript:', extractedScript, 'extractedCharacters:', extractedCharacters);
+
+    // Step 1: 填充剧本数据（2 秒后）— 使用 AI 回复中提取的数据
+    setTimeout(async () => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 1 跳过: status不是running'); return; }
+      const scriptData: ScriptData = extractedScript ?? {
+        episodes: [{
+          id: 'ep1',
+          number: 1,
+          title: extractedTitle || '剧本',
+          scenes: [{
+            id: 's1',
+            title: '开场',
+            summary: '（等待 AI 生成详细内容）',
+            location: '未指定',
+            timeTag: '日间',
+          }],
+        }],
+      };
+      store.updateStepData(0, scriptData);
       store.updateStepProgress(0, 100);
       store.completeStep(0, usePipelineStore.getState().steps[0].data);
       store.advanceToNextStep();
+      console.log('[Pipeline] Step 1 完成: 剧本');
+
+      // 保存剧本到数据库
+      try {
+        const projectId = `proj_${Date.now()}`;
+        await savePipelineScript({
+          project_id: projectId,
+          title: extractedTitle || '剧本',
+          episodes: scriptData.episodes.map(ep => ({
+            number: ep.number,
+            title: ep.title,
+            scenes: ep.scenes.map(s => ({
+              title: s.title,
+              summary: s.summary,
+              location: s.location,
+              time_tag: s.timeTag,
+            })),
+          })),
+        });
+        console.log('[Pipeline] 剧本已保存到数据库');
+      } catch (err) {
+        console.error('[Pipeline] 剧本保存失败:', err);
+      }
     }, 2000);
-    // Mock: fill character data after 4s
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') return;
-      store.updateStepData(1, {
-        characters: [
-          { id: 'c1', name: '林小雨', role: '主角', description: '能看到别人记忆的转学生', status: 'done', avatarColor: '#A8835F' },
-          { id: 'c2', name: '陈明', role: '配角', description: '表面阳光的学霸', status: 'done', avatarColor: '#5A7FA8' },
-          { id: 'c3', name: '王雪', role: '配角', description: '小雨的室友', status: 'generating', avatarColor: '#7A6B8A' },
-        ]
-      } as CharacterData);
+
+    // Step 2: 填充角色数据（4 秒后）— 使用 AI 回复中提取的数据
+    setTimeout(async () => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 2 跳过'); return; }
+      const charData: CharacterData = extractedCharacters ?? {
+        characters: [{
+          id: 'char_1',
+          name: '主角',
+          role: '主角',
+          description: '（从 AI 回复中提取）',
+          status: 'done',
+          avatarColor: '#A8835F',
+        }],
+      };
+      // 确保所有角色状态为 done
+      charData.characters = charData.characters.map((c) => ({ ...c, status: 'done' as const }));
+      store.updateStepData(1, charData);
       store.completeStep(1, usePipelineStore.getState().steps[1].data);
       store.advanceToNextStep();
-    }, 5000);
+      console.log('[Pipeline] Step 2 完成: 角色');
+
+      // 保存角色到数据库
+      try {
+        await savePipelineCharacters('default', charData.characters.map(c => ({
+          name: c.name,
+          role: c.role,
+          description: c.description,
+          avatar_color: c.avatarColor,
+        })));
+        console.log('[Pipeline] 角色已保存到数据库');
+      } catch (err) {
+        console.error('[Pipeline] 角色保存失败:', err);
+      }
+    }, 4000);
+
+    // Step 3: 生成分镜数据（6 秒后）
+    setTimeout(() => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 3 跳过'); return; }
+      const scenes = extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
+      const storyboardData: StoryboardData = {
+        shots: scenes.length > 0
+          ? scenes.map((s, i) => ({
+              id: `shot_${i + 1}`,
+              shotNumber: i + 1,
+              episodeNumber: 1,
+              sceneTitle: s.title,
+              description: s.summary || '场景描述',
+              shotType: ['全景', '中景', '近景', '特写'][i % 4],
+              duration: 3 + (i % 3),
+              status: 'done' as const,
+            }))
+          : [{
+              id: 'shot_1',
+              shotNumber: 1,
+              episodeNumber: 1,
+              sceneTitle: '开场',
+              description: '场景描述待生成',
+              shotType: '全景',
+              duration: 5,
+              status: 'done' as const,
+            }],
+      };
+      store.updateStepData(2, storyboardData);
+      store.completeStep(2, usePipelineStore.getState().steps[2].data);
+      store.advanceToNextStep();
+      console.log('[Pipeline] Step 3 完成: 分镜');
+    }, 6000);
+
+    // Step 4: 模拟视频生成（8 秒后）
+    setTimeout(() => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 4 跳过'); return; }
+      const shots = (usePipelineStore.getState().steps[2].data as StoryboardData)?.shots ?? [];
+      const videoData: VideoData = {
+        clips: shots.map((s) => ({
+          id: `vid_${s.id}`,
+          shotId: s.id,
+          name: `镜头 ${s.shotNumber} — ${s.sceneTitle}`,
+          duration: s.duration,
+          progress: 100,
+          status: 'done' as const,
+        })),
+        overallProgress: 100,
+      };
+      store.updateStepData(3, videoData);
+      store.completeStep(3, usePipelineStore.getState().steps[3].data);
+      store.advanceToNextStep();
+      console.log('[Pipeline] Step 4 完成: 视频');
+    }, 8000);
+
+    // Step 5: 模拟配音生成（10 秒后）
+    setTimeout(() => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 5 跳过'); return; }
+      const chars = extractedCharacters?.characters ?? [];
+      const audioData: AudioData = {
+        voices: chars.length > 0
+          ? chars.map((c) => ({
+              characterId: c.id,
+              characterName: c.name,
+              voiceName: `${c.name} — 温柔青年音`,
+              status: 'done' as const,
+            }))
+          : [{ characterId: 'char_1', characterName: '主角', voiceName: '默认音色', status: 'done' as const }],
+        bgm: { style: '轻柔钢琴', duration: 120, status: 'done' },
+      };
+      store.updateStepData(4, audioData);
+      store.completeStep(4, usePipelineStore.getState().steps[4].data);
+      store.advanceToNextStep();
+      console.log('[Pipeline] Step 5 完成: 配音');
+    }, 10000);
+
+    // Step 6: 模拟合成（12 秒后）
+    setTimeout(() => {
+      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 6 跳过'); return; }
+      const composeData: ComposeData = {
+        videoUrl: null,
+        duration: 120,
+        resolution: '1920x1080',
+        status: 'done',
+      };
+      store.updateStepData(5, composeData);
+      store.completeStep(5, usePipelineStore.getState().steps[5].data);
+      store.completePipeline();
+      console.log('[Pipeline] Step 6 完成: 合成 — Pipeline 全部完成!');
+    }, 12000);
   };
 
   // Build chat messages including pipeline-related ones

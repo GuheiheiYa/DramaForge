@@ -1,4 +1,10 @@
 import { create } from 'zustand';
+import {
+  extractScriptFromReply,
+  extractCharactersFromReply,
+  extractProjectTitle,
+} from '@/lib/pipeline-data-extractor';
+import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
 
 export interface ChatMessage {
   id: string;
@@ -45,7 +51,7 @@ function generateId() {
 }
 
 // ─── API ───
-const API_BASE = 'http://localhost:8888/api/v1';
+const API_BASE = 'http://localhost:7778/api/v1';
 
 const modelToProvider: Record<string, string> = {
   'mimo': 'mimo',
@@ -77,6 +83,10 @@ interface ChatState {
   currentSkill: string;
   isGenerating: boolean;
   deepThink: boolean;
+  // Pipeline 相关 — 从 AI 回复中提取的数据
+  extractedScript: ScriptData | null;
+  extractedCharacters: CharacterData | null;
+  extractedTitle: string;
 
   createSession: () => string;
   deleteSession: (id: string) => void;
@@ -87,6 +97,7 @@ interface ChatState {
   setSkill: (skill: string) => void;
   setDeepThink: (v: boolean) => void;
   getCurrentSession: () => ChatSession | null;
+  updateExtractedData: (data: { script?: ScriptData; characters?: CharacterData; title?: string }) => void;
 }
 
 const defaultModel = 'mimo';
@@ -102,6 +113,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentSkill: defaultSkill,
   isGenerating: false,
   deepThink: false,
+  extractedScript: null,
+  extractedCharacters: null,
+  extractedTitle: '',
 
   createSession: () => {
     const now = new Date();
@@ -278,6 +292,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get();
     return state.sessions.find((s) => s.id === state.currentSessionId) ?? null;
   },
+
+  updateExtractedData: (data) => {
+    set((s) => ({
+      extractedScript: data.script ?? s.extractedScript,
+      extractedCharacters: data.characters ?? s.extractedCharacters,
+      extractedTitle: data.title ?? s.extractedTitle,
+    }));
+  },
 }));
 
 // ─── Streaming fetch ───
@@ -310,28 +332,55 @@ async function fetchStreamResponse(
   };
 
   const finishStream = () => {
-    // First: mark streaming as done
-    useChatStore.setState((s) => ({
-      isGenerating: false,
-      sessions: s.sessions.map((ss) => {
-        if (ss.id !== sessionId) return ss;
-        return {
-          ...ss,
-          messages: ss.messages.map((m) =>
-            m.id === aiMsgId ? { ...m, isStreaming: false } : m
-          ),
-        };
-      }),
-    }));
+    // First: mark streaming as done, 同时获取最终的 AI 回复内容
+    let finalContent = '';
+    useChatStore.setState((s) => {
+      const session = s.sessions.find((ss) => ss.id === sessionId);
+      const aiMsg = session?.messages.find((m) => m.id === aiMsgId);
+      finalContent = aiMsg?.content || '';
+      return {
+        isGenerating: false,
+        sessions: s.sessions.map((ss) => {
+          if (ss.id !== sessionId) return ss;
+          return {
+            ...ss,
+            messages: ss.messages.map((m) =>
+              m.id === aiMsgId ? { ...m, isStreaming: false } : m
+            ),
+          };
+        }),
+      };
+    });
     currentAbortController = null;
 
     // Second: if creation request, inject plan card (separate setState to avoid race)
     if (isCreationRequest) {
+      // 从 AI 回复中提取结构化数据
+      const title = extractProjectTitle(projectTitle);
+      const scriptData = extractScriptFromReply(finalContent, title);
+      const charList = extractCharactersFromReply(finalContent);
+
+      console.error('[Pipeline] Extracted data:', {
+        title,
+        contentLength: finalContent.length,
+        episodesCount: scriptData.episodes.length,
+        episodes: scriptData.episodes.map(ep => ({ num: ep.number, title: ep.title, scenes: ep.scenes.length })),
+        charactersCount: charList.length,
+        characters: charList.map(c => c.name),
+      });
+
+      // 更新 store 中的提取数据
+      useChatStore.setState({
+        extractedScript: { episodes: scriptData.episodes },
+        extractedCharacters: { characters: charList },
+        extractedTitle: title,
+      });
+
       setTimeout(() => {
         const planCardMsg: ChatMessage = {
           id: generateId(),
           role: 'assistant',
-          content: projectTitle,
+          content: title,
           type: 'plan_card',
           timestamp: (() => {
             const n = new Date();
@@ -447,6 +496,6 @@ async function fetchStreamResponse(
       // 用户取消，cancelGeneration 已处理状态和 plan_card 注入
       return;
     }
-    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:8001）`);
+    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:7778）`);
   }
 }

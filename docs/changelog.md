@@ -1,5 +1,74 @@
 # 更新日志
 
+## 2026-06-12 16:00:00 — Pipeline 全流程修复 + 端口迁移 + 调试日志
+
+**问题**: [ISS-005]
+**修改文件**:
+- `app/src/pages/Chat.tsx` — 补全 Pipeline Step 3-6（分镜/视频/配音/合成），添加调试日志
+- `app/src/store/useChatStore.ts` — API 端口 7777→7778，错误提示更新
+- `app/src/lib/api.ts` — API 端口 7777→7778
+- `backend/app/api/v1/pipeline.py` — 流式端点添加调试日志
+
+**变更摘要**:
+- Pipeline 6 步全部走通：剧本→角色→分镜→视频→配音→合成
+- 每步完成后自动 advanceToNextStep，最终 completePipeline
+- 端到端流程 12 秒内完成（模拟）
+- 每个步骤添加 console.log 调试日志
+- 后端流式端点添加请求/响应日志
+- 端口从 7777 迁移到 7778（7777 有僵尸进程）
+
+---
+
+## 2026-06-12 11:00:00 — SQLite 数据库 + 剧本/角色持久化
+
+**需求**: [R-012], [R-021]
+**修改文件**:
+- `backend/app/database.py` — 新建，SQLite 引擎和会话管理
+- `backend/app/models/db_models.py` — 新建，ORM 模型（Script/Episode/Scene/Character）
+- `backend/app/config.py` — 添加 SQLITE_URL 配置
+- `backend/requirements.txt` — 添加 aiosqlite 依赖
+- `backend/app/main.py` — lifespan 中初始化数据库
+- `backend/app/api/v1/scripts.py` — 改为数据库操作
+- `backend/app/api/v1/characters.py` — 改为数据库操作
+- `backend/app/api/v1/pipeline.py` — 添加 save-script/save-characters 端点
+- `backend/app/models/schemas.py` — 扩展字段，id 改为可选
+- `app/src/lib/api.ts` — 新建，前端 API 服务层
+- `app/src/pages/Chat.tsx` — Pipeline 完成后自动保存到数据库
+
+**变更摘要**:
+- 引入 SQLite 数据库，零配置即用
+- 剧本和角色数据持久化存储
+- Pipeline 完成后自动保存剧本和角色到数据库
+- 前端 API 服务层统一管理后端请求
+- 剧本 API：创建/查询/更新/删除
+- 角色 API：创建/查询/更新/删除
+
+---
+
+## 2026-06-12 10:30:00 — Pipeline 数据提取器 + 消除硬编码
+
+**需求**: [R-012], [R-016]
+**修改文件**:
+- `app/src/lib/pipeline-data-extractor.ts` — 新建，从 AI 回复中提取结构化剧本和角色数据
+- `app/src/store/useChatStore.ts` — 添加 extractedScript/extractedCharacters 状态，finishStream 自动提取数据
+- `app/src/pages/Chat.tsx` — simulatePipeline 使用提取数据替代硬编码 mock
+
+**变更摘要**:
+- 创建 `pipeline-data-extractor.ts`，支持从 AI 回复中提取集数、场景、角色信息
+- 支持中文数字集数（第一集～第二十集）和阿拉伯数字（第1集～第20集）
+- 支持 `**角色名（主角/配角/龙套）**` 格式的角色提取
+- 支持 `**场景名**：描述` 格式的场景提取
+- finishStream 完成后自动从 AI 回复中提取数据并存入 store
+- simulatePipeline 使用提取的数据填充 Pipeline 面板，不再使用硬编码 mock
+- handleModeSelect 标题从用户输入提取，不再硬编码"记忆碎片"
+- 修复场景标签过滤器过度排除（`关键发现` 被误过滤）
+
+**变更原因**:
+- 原方案 simulatePipeline 使用完全硬编码的 mock 数据，Pipeline 面板显示的剧本和角色与 AI 回复内容完全无关
+- 新方案从 AI 回复中实时提取数据，保证 Pipeline 面板内容与 AI 生成内容一致
+
+---
+
 ## 2026-06-12 01:40:00 — Bug 修复：Pipeline 面板 + Markdown 渲染 + API 契约统一
 
 **需求**: [R-012], [R-013], [R-014], [R-015], [R-016], [R-021]

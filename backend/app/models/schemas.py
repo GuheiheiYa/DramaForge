@@ -73,50 +73,76 @@ class ProjectResponse(BaseModel):
 
 class SceneData(BaseModel):
     """场景数据。"""
-    id: str
+    id: str = ""
     title: str
-    summary: str
-    location: str
-    time_tag: str
+    summary: str = ""
+    location: str = "未指定"
+    time_tag: str = "日间"
     dialogue: str = ""
 
 
 class EpisodeData(BaseModel):
     """分集数据。"""
-    id: str
+    id: str = ""
     number: int
     title: str
-    scenes: list[SceneData]
+    scenes: list[SceneData] = []
 
 
 class ScriptResponse(BaseModel):
     """剧本响应。"""
+    id: str
     project_id: str
+    title: str
     episodes: list[EpisodeData]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ScriptCreate(BaseModel):
+    """创建剧本请求。"""
+    project_id: str = Field(default="default", description="所属项目 ID")
+    title: str = Field(..., min_length=1, max_length=200)
+    episodes: list[EpisodeData] = Field(default_factory=list)
 
 
 # ─── 角色 ───
 
 class CharacterCreate(BaseModel):
     """创建角色请求。"""
+    project_id: str = Field(default="default", description="所属项目 ID")
     name: str = Field(..., min_length=1, max_length=50)
     role: str = Field(default="配角", description="主角/配角/龙套")
+    gender: str = Field(default="", max_length=10)
+    age: int = Field(default=0, ge=0)
     description: str = Field(default="", max_length=500)
     personality: str = Field(default="", max_length=300)
     appearance: str = Field(default="", max_length=300)
+    costume: str = Field(default="", max_length=300)
+    background: str = Field(default="", max_length=500)
+    special_setting: str = Field(default="", max_length=300)
+    avatar_color: str = Field(default="#A8835F", max_length=20)
 
 
 class CharacterResponse(BaseModel):
     """角色响应。"""
     id: str
+    project_id: str
     name: str
     role: str
+    gender: str
+    age: int
     description: str
     personality: str
     appearance: str
+    costume: str
+    background: str
+    special_setting: str
+    avatar_color: str
+    avatar_url: str
     has_generated_image: bool
-    image_url: str | None = None
     created_at: datetime
+    updated_at: datetime
 
 
 # ─── 分镜 ───

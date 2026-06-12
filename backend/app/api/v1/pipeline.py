@@ -62,15 +62,20 @@ async def chat_with_ai_stream(req: ChatRequest):
     """流式 AI 对话接口（SSE）。返回 thinking + content 分块。"""
     import json as _json
 
+    print(f"[STREAM] 收到请求: model={req.model}, messages={len(req.messages)}条")
+
     try:
         provider, default_model = get_provider(req.model)
     except ValueError:
         provider, default_model = get_provider("mimo")
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    print(f"[STREAM] 使用 provider: {provider.__class__.__name__}, model: {default_model}")
 
     async def event_generator():
         try:
+            print("[STREAM] 开始调用 LLM...")
+            chunk_count = 0
             async for chunk in provider.chat_stream(
                 messages=messages,
                 model=default_model,
@@ -78,8 +83,13 @@ async def chat_with_ai_stream(req: ChatRequest):
                 max_tokens=req.max_tokens,
                 deep_think=req.deep_think,
             ):
+                chunk_count += 1
+                if chunk_count <= 3:
+                    print(f"[STREAM] chunk #{chunk_count}: type={chunk.get('type')}, data={chunk.get('data', '')[:50]}")
                 yield f"data: {_json.dumps(chunk, ensure_ascii=False)}\n\n"
+            print(f"[STREAM] 完成，共 {chunk_count} 个 chunk")
         except Exception as e:
+            print(f"[STREAM] 错误: {e}")
             yield f"data: {_json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -214,3 +224,129 @@ def _to_status_response(pipeline: dict) -> PipelineStatusResponse:
         steps=pipeline["steps"],
         error=pipeline["error"],
     )
+
+
+# ─── 数据保存端点 ───
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.database import get_db
+from app.models.db_models import Script, Episode, Scene, Character
+from app.models.schemas import ScriptCreate, CharacterCreate, ScriptResponse, CharacterResponse
+
+
+@router.post("/save-script", response_model=ScriptResponse)
+async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
+    """保存 Pipeline 提取的剧本数据到数据库。"""
+    script = Script(
+        id=f"scr_{uuid.uuid4().hex[:8]}",
+        project_id=req.project_id,
+        title=req.title,
+    )
+    db.add(script)
+
+    for ep_data in req.episodes:
+        episode = Episode(
+            id=f"ep_{uuid.uuid4().hex[:8]}",
+            script_id=script.id,
+            number=ep_data.number,
+            title=ep_data.title,
+        )
+        db.add(episode)
+
+        for idx, scene_data in enumerate(ep_data.scenes):
+            scene = Scene(
+                id=f"sc_{uuid.uuid4().hex[:8]}",
+                episode_id=episode.id,
+                number=idx + 1,
+                title=scene_data.title,
+                summary=scene_data.summary,
+                location=scene_data.location,
+                time_tag=scene_data.time_tag,
+            )
+            db.add(scene)
+
+    await db.flush()
+
+    # 重新加载关联数据
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Script).where(Script.id == script.id).options(
+            selectinload(Script.episodes).selectinload(Episode.scenes)
+        )
+    )
+    saved = result.scalar_one()
+
+    episodes = []
+    for ep in sorted(saved.episodes, key=lambda e: e.number):
+        scenes = [
+            {"id": s.id, "title": s.title, "summary": s.summary or "", "location": s.location or "", "time_tag": s.time_tag or ""}
+            for s in sorted(ep.scenes, key=lambda s: s.number)
+        ]
+        episodes.append({"id": ep.id, "number": ep.number, "title": ep.title, "scenes": scenes})
+
+    return ScriptResponse(
+        id=saved.id,
+        project_id=saved.project_id,
+        title=saved.title,
+        episodes=episodes,
+        created_at=saved.created_at,
+        updated_at=saved.updated_at,
+    )
+
+
+class SaveCharactersRequest(BaseModel):
+    """批量保存角色请求。"""
+    project_id: str = "default"
+    characters: list[CharacterCreate]
+
+
+@router.post("/save-characters", response_model=list[CharacterResponse])
+async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends(get_db)):
+    """保存 Pipeline 提取的角色数据到数据库。"""
+    saved = []
+    for char_data in req.characters:
+        char = Character(
+            id=f"char_{uuid.uuid4().hex[:8]}",
+            project_id=req.project_id,
+            name=char_data.name,
+            role=char_data.role,
+            gender=char_data.gender,
+            age=char_data.age,
+            description=char_data.description,
+            personality=char_data.personality,
+            appearance=char_data.appearance,
+            costume=char_data.costume,
+            background=char_data.background,
+            special_setting=char_data.special_setting,
+            avatar_color=char_data.avatar_color,
+        )
+        db.add(char)
+        saved.append(char)
+
+    await db.flush()
+
+    return [
+        CharacterResponse(
+            id=c.id,
+            project_id=c.project_id,
+            name=c.name,
+            role=c.role,
+            gender=c.gender or "",
+            age=c.age or 0,
+            description=c.description or "",
+            personality=c.personality or "",
+            appearance=c.appearance or "",
+            costume=c.costume or "",
+            background=c.background or "",
+            special_setting=c.special_setting or "",
+            avatar_color=c.avatar_color or "#A8835F",
+            avatar_url=c.avatar_url or "",
+            has_generated_image=bool(c.avatar_url),
+            created_at=c.created_at,
+            updated_at=c.updated_at,
+        )
+        for c in saved
+    ]

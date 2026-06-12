@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     # 数据库
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dramaforge"
+    SQLITE_URL: str = "sqlite+aiosqlite:///./dramaforge.db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
