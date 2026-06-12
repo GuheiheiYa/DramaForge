@@ -223,8 +223,8 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
             '[&_hr]:border-[#DEDBD8] [&_hr]:my-3',
             '[&_table]:w-full [&_table]:my-2',
             '[&_th]:bg-[#F8F7F6] [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-semibold [&_th]:border [&_th]:border-[#DEDBD8]',
-            '[&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:border [&_td]:border-[#DEDBD8]',
-          ')}>
+            '[&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:border [&_td]:border-[#DEDBD8]'
+          )}>
             {isUser ? (
               <span className="whitespace-pre-wrap">{message.content}</span>
             ) : message.content ? (
