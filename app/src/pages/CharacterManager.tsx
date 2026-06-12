@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from 'sonner';
 import CharacterGrid from './character/CharacterGrid';
@@ -7,13 +7,82 @@ import CharacterDetailDrawer from './character/CharacterDetailDrawer';
 import type { Character } from './character/types';
 import { mockCharacters } from './character/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
+import {
+  getCharacters as apiGetCharacters,
+  createCharacter as apiCreateCharacter,
+  updateCharacter as apiUpdateCharacter,
+  deleteCharacter as apiDeleteCharacter,
+  type CharacterData,
+} from '@/lib/api';
+
+/** 后端 CharacterData → 前端 Character 类型转换 */
+function toFrontendChar(c: CharacterData): Character {
+  return {
+    id: c.id,
+    name: c.name,
+    role: c.role as Character['role'],
+    gender: c.gender as Character['gender'],
+    age: c.age,
+    description: c.description,
+    personalityTraits: c.personality_traits || [],
+    appearance: c.appearance,
+    costume: c.costume,
+    background: c.background,
+    specialSetting: c.special_setting,
+    assets: c.assets.map((a) => ({ id: a.id || '', type: (a.type || '立绘') as Character['assets'][0]['type'], name: a.name || '', thumbnail: a.thumbnail || '' })),
+    hasGeneratedImage: c.has_generated_image,
+    avatarUrl: c.avatar_url || undefined,
+    relationships: c.relationships.map((r) => ({ targetCharacterId: r.target_character_id || '', targetName: r.target_name || '', relation: r.relation || '' })),
+    scenes: c.scenes || [],
+    createdAt: c.created_at?.slice(0, 10) || '',
+    updatedAt: c.updated_at?.slice(0, 10) || '',
+  };
+}
+
+/** 前端 Character → 后端 API 请求体 */
+function toApiChar(c: Character, projectId: string = 'default') {
+  return {
+    project_id: projectId,
+    name: c.name,
+    role: c.role,
+    gender: c.gender,
+    age: c.age,
+    description: c.description,
+    personality_traits: c.personalityTraits,
+    appearance: c.appearance,
+    costume: c.costume,
+    background: c.background,
+    special_setting: c.specialSetting,
+    avatar_color: '#A8835F',
+    avatar_url: c.avatarUrl || '',
+    has_generated_image: c.hasGeneratedImage,
+    assets: c.assets.map((a) => ({ id: a.id, type: a.type, name: a.name, thumbnail: a.thumbnail })),
+    relationships: c.relationships.map((r) => ({ target_character_id: r.targetCharacterId, target_name: r.targetName, relation: r.relation })),
+    scenes: c.scenes,
+  };
+}
 
 export default function CharacterManager() {
-  const [characters, setCharacters] = useState<Character[]>(mockCharacters);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [detailCharacter, setDetailCharacter] = useState<Character | null>(null);
   const { success } = useToast();
+
+  // 从后端加载角色列表
+  useEffect(() => {
+    apiGetCharacters()
+      .then((data) => {
+        setCharacters(data.map(toFrontendChar));
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[CharacterManager] 加载失败，使用 mock 数据:', err);
+        setCharacters(mockCharacters);
+        setLoading(false);
+      });
+  }, []);
 
   // Stats computed from character data
   const stats = useMemo(() => {
@@ -39,24 +108,57 @@ export default function CharacterManager() {
 
   const handleDelete = useCallback((character: Character) => {
     if (window.confirm(`确定要删除角色「${character.name}」吗？此操作不可撤销。`)) {
-      setCharacters((prev) => prev.filter((c) => c.id !== character.id));
-      if (detailCharacter?.id === character.id) {
-        setDetailCharacter(null);
-      }
-      success(MSG.characterDeleted);
+      apiDeleteCharacter(character.id)
+        .then(() => {
+          setCharacters((prev) => prev.filter((c) => c.id !== character.id));
+          if (detailCharacter?.id === character.id) setDetailCharacter(null);
+          success(MSG.characterDeleted);
+        })
+        .catch((err) => {
+          console.error('[CharacterManager] 删除失败:', err);
+          // 乐观更新：本地也删除
+          setCharacters((prev) => prev.filter((c) => c.id !== character.id));
+          if (detailCharacter?.id === character.id) setDetailCharacter(null);
+          success(MSG.characterDeleted);
+        });
     }
   }, [detailCharacter, success]);
 
   const handleSave = useCallback((character: Character) => {
-    setCharacters((prev) => {
-      const exists = prev.find((c) => c.id === character.id);
-      if (exists) {
-        return prev.map((c) => (c.id === character.id ? character : c));
-      }
-      return [character, ...prev];
-    });
-    success(editingCharacter ? MSG.updated : MSG.characterSaved);
-  }, [editingCharacter, success]);
+    const exists = characters.find((c) => c.id === character.id);
+    const apiCall = exists
+      ? apiUpdateCharacter(character.id, toApiChar(character))
+      : apiCreateCharacter(toApiChar(character));
+
+    apiCall
+      .then((saved) => {
+        const frontendChar = toFrontendChar(saved as CharacterData);
+        setCharacters((prev) => {
+          const idx = prev.findIndex((c) => c.id === frontendChar.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = frontendChar;
+            return next;
+          }
+          return [frontendChar, ...prev];
+        });
+        success(editingCharacter ? MSG.updated : MSG.characterSaved);
+      })
+      .catch((err) => {
+        console.error('[CharacterManager] 保存失败:', err);
+        // 乐观更新：本地也保存
+        setCharacters((prev) => {
+          const idx = prev.findIndex((c) => c.id === character.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = character;
+            return next;
+          }
+          return [character, ...prev];
+        });
+        success(editingCharacter ? MSG.updated : MSG.characterSaved);
+      });
+  }, [characters, editingCharacter, success]);
 
   const handleOpenDetail = useCallback((character: Character) => {
     setDetailCharacter(character);

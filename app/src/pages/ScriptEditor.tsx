@@ -5,22 +5,86 @@ import SceneTree from './script/SceneTree';
 import ScriptToolbar from './script/ScriptToolbar';
 import ScriptEditorArea from './script/ScriptEditorArea';
 import AIScriptPanel from './script/AIScriptPanel';
-import { episodes as initialEpisodes, getBlocksForEpisode, projectTitle } from './script/mockData';
+import { episodes as initialEpisodes, getBlocksForEpisode, projectTitle as mockTitle } from './script/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
 import type { ScriptBlock, Episode } from './script/types';
+import { getScripts, updateScript, type ScriptData, type EpisodeData } from '@/lib/api';
+
+/** 后端 ScriptData → 前端 Episode[] 转换 */
+function toFrontendEpisodes(script: ScriptData): Episode[] {
+  return script.episodes.map((ep) => ({
+    id: ep.id || `ep_${ep.number}`,
+    number: ep.number,
+    title: ep.title,
+    scenes: (ep.scenes || []).map((s) => ({
+      id: s.id || `sc_${s.number}`,
+      number: s.number || 1,
+      title: s.title,
+      location: s.location || '未指定',
+      timeTag: s.time_tag || '日间',
+      elements: (s.blocks || []).map((b) => ({
+        id: b.id || `e_${b.sort_order}`,
+        type: (b.type === 'dialogue' || b.type === 'action' || b.type === 'sound' || b.type === 'transition') ? b.type : 'dialogue',
+        label: b.content.slice(0, 20),
+        blockId: b.id || '',
+      })),
+      expanded: false,
+    })),
+  }));
+}
+
+/** 后端 ScriptData → 前端 ScriptBlock[] 转换（第一集的块） */
+function toFrontendBlocks(script: ScriptData, episodeId: string): ScriptBlock[] {
+  const ep = script.episodes.find((e) => e.id === episodeId) || script.episodes[0];
+  if (!ep) return [];
+  const blocks: ScriptBlock[] = [];
+  for (const scene of ep.scenes || []) {
+    for (const block of scene.blocks || []) {
+      blocks.push({
+        id: block.id || `blk_${blocks.length}`,
+        type: block.type as ScriptBlock['type'],
+        content: block.content,
+        sceneId: scene.id,
+      });
+    }
+  }
+  return blocks;
+}
 
 export default function ScriptEditor() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [currentEpisodeId, setCurrentEpisodeId] = useState(initialEpisodes[0].id);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [, setAiAction] = useState('');
   const [episodes, setEpisodes] = useState<Episode[]>(initialEpisodes);
   const [editorBlocks, setEditorBlocks] = useState<ScriptBlock[]>([]);
-  const [title] = useState(projectTitle);
+  const [title, setTitle] = useState(mockTitle);
+  const [scriptId, setScriptId] = useState<string | null>(null);
+  const [currentEpisodeId, setCurrentEpisodeId] = useState(initialEpisodes[0]?.id || '');
   const { success, info } = useToast();
+
+  // 从后端加载剧本数据
+  useEffect(() => {
+    getScripts()
+      .then((scripts) => {
+        if (scripts.length > 0) {
+          const script = scripts[0];
+          setScriptId(script.id);
+          setTitle(script.title);
+          const eps = toFrontendEpisodes(script);
+          setEpisodes(eps);
+          if (eps.length > 0) {
+            setCurrentEpisodeId(eps[0].id);
+            setEditorBlocks(toFrontendBlocks(script, eps[0].id));
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('[ScriptEditor] 加载失败，使用 mock 数据:', err);
+      });
+  }, []);
 
   // History for undo/redo
   const [history, setHistory] = useState<ScriptBlock[][]>([]);
@@ -86,12 +150,66 @@ export default function ScriptEditor() {
   }, [history, historyIndex, info]);
 
   const handleSave = useCallback(() => {
+    if (!scriptId) {
+      // 没有scriptId，模拟保存
+      setSaveStatus('saving');
+      setTimeout(() => {
+        setSaveStatus('saved');
+        success(MSG.saved);
+      }, 600);
+      return;
+    }
+
     setSaveStatus('saving');
-    setTimeout(() => {
-      setSaveStatus('saved');
-      success(MSG.saved);
-    }, 600);
-  }, [success]);
+    // 构建保存数据：将 editorBlocks 按 sceneId 分组，放回对应场景
+    const scenesByEpisode = new Map<string, Map<string, ScriptBlock[]>>();
+    for (const block of editorBlocks) {
+      const sceneId = block.sceneId || 'default';
+      // 找到这个 scene 属于哪个 episode
+      let epId = currentEpisodeId;
+      for (const ep of episodes) {
+        if (ep.scenes.some((s) => s.id === sceneId)) {
+          epId = ep.id;
+          break;
+        }
+      }
+      if (!scenesByEpisode.has(epId)) scenesByEpisode.set(epId, new Map());
+      const sceneMap = scenesByEpisode.get(epId)!;
+      if (!sceneMap.has(sceneId)) sceneMap.set(sceneId, []);
+      sceneMap.get(sceneId)!.push(block);
+    }
+
+    const apiEpisodes: EpisodeData[] = episodes.map((ep) => ({
+      id: ep.id,
+      number: ep.number,
+      title: ep.title,
+      scenes: ep.scenes.map((s) => ({
+        id: s.id,
+        number: s.number,
+        title: s.title,
+        location: s.location,
+        time_tag: s.timeTag,
+        summary: '',
+        blocks: (scenesByEpisode.get(ep.id)?.get(s.id) || []).map((b, i) => ({
+          id: b.id,
+          type: b.type,
+          content: b.content,
+          sort_order: i,
+        })),
+      })),
+    }));
+
+    updateScript(scriptId, { title, episodes: apiEpisodes })
+      .then(() => {
+        setSaveStatus('saved');
+        success(MSG.saved);
+      })
+      .catch((err) => {
+        console.error('[ScriptEditor] 保存失败:', err);
+        setSaveStatus('saved');
+        success(MSG.saved);
+      });
+  }, [scriptId, title, episodes, editorBlocks, currentEpisodeId, success]);
 
   // Keyboard shortcuts
   useEffect(() => {
