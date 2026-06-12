@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Integer, Text, Boolean, DateTime, ForeignKey, JSON
+    Column, String, Integer, Text, Boolean, DateTime, ForeignKey, JSON, Float
 )
 from sqlalchemy.orm import relationship
 
@@ -146,3 +146,94 @@ class StoryboardShot(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     project = relationship("Project", back_populates="shots")
+
+
+class Skill(Base):
+    """技能/风格包表 — 对齐前端 skill/types.ts。"""
+    __tablename__ = "skills"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("skill_"))
+    name = Column(String(100), nullable=False, comment="技能名称")
+    description = Column(Text, default="", comment="简短描述")
+    detailed_description = Column(Text, default="", comment="详细描述")
+    category = Column(String(20), default="漫剧", comment="分类: 漫剧/短剧")
+    style = Column(String(20), default="日系", comment="风格: 日系/古风/现代/悬疑/甜宠/科幻/喜剧")
+    tags = Column(JSON, default=list, comment="标签列表 JSON")
+    cover_image = Column(String(500), default="", comment="封面图 URL")
+    version = Column(String(20), default="v1.0.0", comment="版本号")
+    author_name = Column(String(50), default="", comment="作者名")
+    author_avatar = Column(String(500), default="", comment="作者头像 URL")
+    download_count = Column(Integer, default=0, comment="下载次数")
+    rating = Column(Float, default=0.0, comment="评分 0-5")
+    review_count = Column(Integer, default=0, comment="评价数")
+    is_official = Column(Boolean, default=False, comment="是否官方")
+    install_status = Column(String(20), default="not_installed", comment="安装状态: installed/not_installed/installing")
+    usage_instructions = Column(Text, default="", comment="使用说明")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    parameters = relationship("SkillParameter", back_populates="skill", cascade="all, delete-orphan")
+    reviews = relationship("SkillReview", back_populates="skill", cascade="all, delete-orphan")
+
+
+class SkillParameter(Base):
+    """技能参数表 — 可调参数（滑块/选择器/开关）。"""
+    __tablename__ = "skill_parameters"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("param_"))
+    skill_id = Column(String(32), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(100), nullable=False, comment="参数名")
+    type = Column(String(20), default="slider", comment="类型: slider/select/toggle")
+    value = Column(String(100), default="", comment="当前值")
+    min_val = Column(Float, default=0, comment="最小值")
+    max_val = Column(Float, default=100, comment="最大值")
+    step = Column(Float, default=1, comment="步长")
+    options = Column(JSON, default=list, comment="选项列表 JSON（select 类型）")
+    default_value = Column(String(100), default="", comment="默认值")
+
+    skill = relationship("Skill", back_populates="parameters")
+
+
+class SkillReview(Base):
+    """技能评价表。"""
+    __tablename__ = "skill_reviews"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("rev_"))
+    skill_id = Column(String(32), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
+    user_name = Column(String(50), default="", comment="用户名")
+    avatar = Column(String(500), default="", comment="用户头像 URL")
+    rating = Column(Integer, default=5, comment="评分 1-5")
+    comment = Column(Text, default="", comment="评价内容")
+    date = Column(String(20), default="", comment="评价日期 YYYY-MM-DD")
+
+    skill = relationship("Skill", back_populates="reviews")
+
+
+class TimelineClip(Base):
+    """时间轴片段表 — 合成室的视频/音频/BGM 片段。"""
+    __tablename__ = "timeline_clips"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("clip_"))
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False, comment="片段名称")
+    track_type = Column(String(20), default="video", comment="轨道类型: video/audio/bgm/subtitle")
+    start_time = Column(Float, default=0, comment="开始时间(秒)")
+    duration = Column(Float, default=5, comment="时长(秒)")
+    status = Column(String(20), default="ready", comment="状态: ready/generating/error")
+    shot_ref = Column(String(50), default="", comment="关联分镜引用")
+    color = Column(String(20), default="", comment="显示颜色 HEX")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class SubtitleSegment(Base):
+    """字幕段表 — 合成室的字幕内容。"""
+    __tablename__ = "subtitle_segments"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("sub_"))
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    text = Column(Text, default="", comment="字幕文本")
+    start_time = Column(Float, default=0, comment="开始时间(秒)")
+    duration = Column(Float, default=3, comment="时长(秒)")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

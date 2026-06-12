@@ -88,8 +88,8 @@ Pipeline 面板展开
 
 ## 修复计划
 
-1. 创建 `pipeline-data-extractor.ts` — 从 AI 回复中提取结构化数据
-2. 修改 `simulatePipeline` — 使用提取的数据而非硬编码
-3. 提取硬编码常量到独立文件
-4. 拆分 Chat.tsx 组件
-5. 端到端测试验证
+- [x] 1. 创建 `pipeline-data-extractor.ts` — 从 AI 回复中提取结构化数据 ✅ 2026-06-12
+- [x] 2. 修改 `simulatePipeline` — 使用提取的数据而非硬编码 ✅ 2026-06-12
+- [x] 3. Pipeline 6 步全流程走通（剧本→角色→分镜→视频→配音→合成）✅ 2026-06-12
+- [x] 4. 端到端测试验证 ✅ 2026-06-12
+- [ ] 5. 拆分 Chat.tsx 组件（待后续优化）

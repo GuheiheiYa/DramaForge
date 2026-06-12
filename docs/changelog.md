@@ -1,5 +1,21 @@
 # 更新日志
 
+## 2026-06-12 17:50:00 — 补全 12 张表 + 全量 UUID + seed 重建
+
+**需求**: [R-012], [R-021]
+**修改文件**:
+- `backend/app/models/db_models.py` — 新增 5 张表：skills/skill_parameters/skill_reviews/timeline_clips/subtitle_segments
+- `backend/seed.py` — 清空所有 16 张旧表，重建 12 张表，所有 ID 改为 UUID
+
+**变更摘要**:
+- 数据库从 7 张表扩展到 12 张表
+- 新增：skills（技能包）、skill_parameters（技能参数）、skill_reviews（技能评价）、timeline_clips（时间轴片段）、subtitle_segments（字幕段）
+- 清除旧表：roles/role_assets/role_relationships/role_traits
+- 所有表 ID 统一 UUID 格式（如 `char_a1b2c3d4e5f6`）
+- seed.py 灌入完整 mock 数据：1 项目 + 1 剧本 + 3 集 + 7 场景 + 12 块 + 8 角色 + 6 分镜 + 1 技能包 + 4 参数 + 3 评价 + 7 时间轴 + 4 字幕
+
+---
+
 ## 2026-06-12 17:15:00 — 全量数据库重建 + 前后端 CRUD 对接
 
 **需求**: [R-012], [R-021]
