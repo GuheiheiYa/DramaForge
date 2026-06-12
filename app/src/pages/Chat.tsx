@@ -1,18 +1,18 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Plus, Sparkles, Bot, User, Copy, RefreshCw, Check,
   Image as ImageIcon, FileVideo, Paperclip, ChevronDown, Mic,
-  X, AlertCircle, RotateCcw, SkipForward, Eye, Rocket, Hand, EyeOff,
-  Brain, StopCircle, ChevronUp, Loader2,
+  X, Eye, Rocket, Hand, EyeOff,
+  Brain, StopCircle, Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore, modelOptions, skillOptions, type ChatMessage } from '@/store/useChatStore';
 import {
   usePipelineStore, PIPELINE_STEPS,
-  type PipelineMode, type StepId,
+  type PipelineMode,
   type ScriptData, type CharacterData, type StoryboardData,
   type VideoData, type AudioData, type ComposeData,
 } from '@/store/usePipelineStore';
@@ -328,7 +328,7 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
   const uploadBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (onQuickFill) { (window as any).__chatFillInput = (text: string) => { setInput(text); setTimeout(() => { if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px'; inputRef.current.focus(); } }, 0); }; }
+    if (onQuickFill) { (window as unknown as Record<string, unknown>).__chatFillInput = (text: string) => { setInput(text); setTimeout(() => { if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px'; inputRef.current.focus(); } }, 0); }; }
   }, [onQuickFill]);
 
   const handleSend = useCallback(() => {
@@ -421,7 +421,6 @@ function StepBar() {
         const isFailed = step.status === 'failed';
         const isSkipped = step.status === 'skipped';
         const isRunning = step.status === 'running';
-        const isWaiting = step.status === 'waiting';
         const isAccessible = isDone || isFailed || isSkipped || isActive;
 
         return (
@@ -670,70 +669,12 @@ function ModeSelectorCard({ title, onSelect }: { title: string; onSelect: (mode:
 }
 
 // ═══════════════════════════════════════════════════
-// Complete Card
-// ═══════════════════════════════════════════════════
-function CompleteCard({ title, duration }: { title: string; duration: string }) {
-  const navigate = (path: string) => toastInfo(`跳转到 ${path}`);
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl border border-[#EFEDEB] shadow-sm p-5 max-w-[480px]">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-full bg-[#F0F5F0] flex items-center justify-center"><Check size={20} className="text-[#5B8C5A]" /></div>
-        <div>
-          <p className="text-[14px] font-semibold text-[#383431]">《{title}》制作完成！</p>
-          <p className="text-[11px] text-[#A8A39E]">{duration}</p>
-        </div>
-      </div>
-      <div className="bg-[#F0F5F0] rounded-lg p-3 mb-4 text-[11px] text-[#5B8C5A] flex flex-wrap gap-x-3">
-        <span>✅ 剧本</span><span>✅ 角色</span><span>✅ 分镜</span><span>✅ 视频</span><span>✅ 配音</span><span>✅ 合成</span>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={() => navigate('/composer')} className="flex-1 py-2.5 rounded-xl bg-[#A8835F] hover:bg-[#8E6A48] text-white text-[12px] font-medium transition-colors">🎬 查看成片</button>
-        <button onClick={() => navigate('/script')} className="flex-1 py-2.5 rounded-xl border border-[#DEDBD8] hover:bg-[#F8F7F6] text-[#524D48] text-[12px] font-medium transition-colors">📝 编辑剧本</button>
-        <button onClick={() => navigate('/storyboard')} className="flex-1 py-2.5 rounded-xl border border-[#DEDBD8] hover:bg-[#F8F7F6] text-[#524D48] text-[12px] font-medium transition-colors">🎬 调整分镜</button>
-      </div>
-    </motion.div>
-  );
-}
-
-// ═══════════════════════════════════════════════════
-// Error Card
-// ═══════════════════════════════════════════════════
-function ErrorCard() {
-  const error = usePipelineStore((s) => s.error);
-  const retryStep = usePipelineStore((s) => s.retryStep);
-  const skipStep = usePipelineStore((s) => s.skipStep);
-  const currentStep = usePipelineStore((s) => s.currentStep);
-  if (!error) return null;
-  const stepConfig = PIPELINE_STEPS.find(s => s.id === error.step);
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl border border-[#FDF2F0] shadow-sm p-5 max-w-[480px]">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 rounded-full bg-[#FDF2F0] flex items-center justify-center"><AlertCircle size={20} className="text-[#B85C50]" /></div>
-        <div>
-          <p className="text-[13px] font-semibold text-[#B85C50]">{stepConfig?.icon} {stepConfig?.label}生成失败</p>
-          <p className="text-[11px] text-[#A8A39E]">{error.message}</p>
-        </div>
-      </div>
-      <div className="flex gap-2 mt-3">
-        <button onClick={() => retryStep(currentStep)} className="flex-1 py-2 rounded-xl bg-[#5A7FA8] hover:bg-[#4A6F8A] text-white text-[12px] font-medium transition-colors flex items-center justify-center gap-1.5">
-          <RotateCcw size={13} /> 重试
-        </button>
-        <button onClick={() => skipStep(currentStep)} className="flex-1 py-2 rounded-xl border border-[#DEDBD8] hover:bg-[#F8F7F6] text-[#524D48] text-[12px] font-medium transition-colors flex items-center justify-center gap-1.5">
-          <SkipForward size={13} /> 跳过
-        </button>
-      </div>
-    </motion.div>
-  );
-}
-
-// ═══════════════════════════════════════════════════
 // Pipeline Panel (right side)
 // ═══════════════════════════════════════════════════
 function PipelinePanel() {
   const currentStep = usePipelineStore((s) => s.currentStep);
   const status = usePipelineStore((s) => s.status);
   const setPanelOpen = usePipelineStore((s) => s.setPanelOpen);
-  const projectTitle = usePipelineStore((s) => s.projectTitle);
   const resumePipeline = usePipelineStore((s) => s.resumePipeline);
 
   const stepComponents = [ScriptPreview, CharacterPreview, StoryboardPreview, VideoPreview, AudioPreview, ComposePreview];
@@ -785,15 +726,15 @@ export default function Chat() {
   const panelOpen = usePipelineStore((s) => s.panelOpen);
   const startPipeline = usePipelineStore((s) => s.startPipeline);
 
-  const messages = currentSession?.messages ?? [];
+  const messages = useMemo(() => currentSession?.messages ?? [], [currentSession?.messages]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isGenerating]);
 
   const handleQuickFill = (text: string) => {
     if (!currentSessionId) createSession();
-    const fn = (window as any).__chatFillInput;
-    if (fn) fn(text);
+    const fn = (window as unknown as Record<string, unknown>).__chatFillInput;
+    if (typeof fn === 'function') fn(text);
     else setTimeout(() => sendMessage(text), 100);
   };
 

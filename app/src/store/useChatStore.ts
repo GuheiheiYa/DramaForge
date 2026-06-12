@@ -396,11 +396,12 @@ async function fetchStreamResponse(
     }
 
     finishStream();
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    if (error.name === 'AbortError') {
       // User cancelled, already handled by cancelGeneration
       return;
     }
-    setError(`请求失败：${err.message}。请检查后端是否已启动（http://localhost:8001）`);
+    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:8001）`);
   }
 }

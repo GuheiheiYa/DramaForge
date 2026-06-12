@@ -36,8 +36,8 @@ export default function ComposerStudio() {
   const [videoClips, setVideoClips] = useState<TimelineClip[]>(mockVideoClips);
   const [audioClips] = useState<TimelineClip[]>(mockAudioClips);
   const [bgmClips] = useState<TimelineClip[]>(mockBgmClips);
-  const [undoStack, _setUndoStack] = useState(0);
-  const [redoStack, _setRedoStack] = useState(0);
+  const [undoStack] = useState(0);
+  const [redoStack] = useState(0);
 
   const totalDuration = getTotalTimelineDuration();
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -75,6 +75,12 @@ export default function ComposerStudio() {
     };
   }, [isPlaying, totalDuration]);
 
+  const handleDeleteClip = useCallback((id: string) => {
+    setVideoClips((prev) => prev.filter((c) => c.id !== id));
+    setSelectedClipId((prev) => prev === id ? null : prev);
+    toastSuccess('片段已删除');
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -101,7 +107,7 @@ export default function ComposerStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, totalDuration, selectedClipId]);
+  }, [isPlaying, totalDuration, selectedClipId, handleDeleteClip]);
 
   const handlePlayPause = useCallback(() => setIsPlaying((p) => !p), []);
   const handleSeek = useCallback((time: number) => {
@@ -124,13 +130,7 @@ export default function ComposerStudio() {
   const handleSkipBackward = useCallback(() => setCurrentTime((t) => Math.max(0, t - 5)), []);
   const handleSkipForward = useCallback(() => setCurrentTime((t) => Math.min(totalDuration, t + 5)), [totalDuration]);
 
-  const handleDeleteClip = useCallback((id: string) => {
-    setVideoClips((prev) => prev.filter((c) => c.id !== id));
-    setSelectedClipId((prev) => prev === id ? null : prev);
-    toastSuccess('片段已删除');
-  }, []);
-
-  const handleCopyClip = useCallback((_id: string) => {
+  const handleCopyClip = useCallback(() => {
     toastInfo('片段已复制到剪贴板');
   }, []);
 
@@ -148,7 +148,7 @@ export default function ComposerStudio() {
     toastSuccess('片段已分割');
   }, []);
 
-  const handleMuteClip = useCallback((_id: string) => {
+  const handleMuteClip = useCallback(() => {
     toastInfo('片段已静音');
   }, []);
 

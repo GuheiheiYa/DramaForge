@@ -82,7 +82,7 @@ export default function AppSidebar() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleNewSession = () => {
-    const id = createSession();
+    createSession();
     navigate('/chat');
   };
 

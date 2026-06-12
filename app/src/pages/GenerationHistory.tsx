@@ -10,9 +10,6 @@ import {
   Trash2,
   RefreshCw,
   Eye,
-  Play,
-  ChevronRight,
-  Filter,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';

@@ -6,10 +6,8 @@ import {
   Image,
   Music,
   Video,
-  FileType,
   Upload,
   Trash2,
-  Eye,
   Download,
   Check,
   MoreHorizontal,
@@ -21,7 +19,6 @@ import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 
 type AssetType = 'all' | 'image' | 'audio' | 'video';
-type SortOption = '最近上传' | '名称' | '类型';
 
 interface Asset {
   id: string;
@@ -87,7 +84,6 @@ export default function AssetLibrary() {
   const [assets] = useState<Asset[]>(mockAssets);
   const [filterType, setFilterType] = useState<AssetType>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortOption] = useState<SortOption>('最近上传');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);

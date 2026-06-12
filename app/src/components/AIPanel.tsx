@@ -128,12 +128,12 @@ export default function AIPanel() {
     [isTyping, activeAction, addUserMessage, addAIMessage]
   );
 
-  const handleAccept = useCallback((_msgId: string) => {
+  const handleAccept = useCallback(() => {
     toast.success('已接受AI建议，内容已应用到剧本');
   }, []);
 
   const handleRetry = useCallback(
-    (_msgId: string) => {
+    () => {
       toast.loading('正在重新生成...');
       setIsTyping(true);
       setTimeout(() => {

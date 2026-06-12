@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronUp,
@@ -52,16 +52,12 @@ const defaultTasks: TaskItem[] = [
 
 export default function ProgressPanel() {
   const [expanded, setExpanded] = useState(false);
-  const [visible, setVisible] = useState(true);
+  const [visible] = useState(true);
   const [stages] = useState<Stage[]>(defaultStages);
   const [tasks, setTasks] = useState<TaskItem[]>(defaultTasks);
   const [showConfirm, setShowConfirm] = useState(false);
   const [cancelTaskId, setCancelTaskId] = useState<string | null>(null);
   const [cancelTaskName, setCancelTaskName] = useState('');
-
-  useEffect(() => {
-    setVisible(true);
-  }, []);
 
   const overallProgress = useCallback(() => {
     if (tasks.length === 0) return 0;

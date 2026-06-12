@@ -3,15 +3,11 @@ import { motion } from 'framer-motion';
 import {
   DollarSign,
   TrendingUp,
-  TrendingDown,
-  PieChart,
   BarChart3,
-  ExternalLink,
   RefreshCw,
-  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toastInfo, toastSuccess } from '@/hooks/useToast';
+import { toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 
 interface CostBreakdown {
@@ -102,13 +98,12 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
 
 function CostPieChart({ data }: { data: CostBreakdown[] }) {
   const total = data.reduce((s, d) => s + d.amount, 0);
-  let cumPct = 0;
-  const segments = data.map((d) => {
+  const segments = data.reduce<Array<CostBreakdown & { pct: number; startPct: number; endPct: number }>>((acc, d) => {
     const pct = d.amount / total;
-    const startPct = cumPct;
-    cumPct += pct;
-    return { ...d, pct, startPct, endPct: cumPct };
-  });
+    const startPct = acc.length > 0 ? acc[acc.length - 1].endPct : 0;
+    acc.push({ ...d, pct, startPct, endPct: startPct + pct });
+    return acc;
+  }, []);
 
   return (
     <div className="flex items-center gap-6">
@@ -169,8 +164,6 @@ export default function CostStatistics() {
     const proj = projects.find((p) => p.name === selectedProject);
     return proj?.breakdown || [];
   }, [selectedProject, projects]);
-
-  const maxAmount = Math.max(...displayBreakdown.map((d) => d.amount), 1);
 
   return (
     <>
