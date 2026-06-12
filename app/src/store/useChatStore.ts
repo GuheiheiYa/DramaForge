@@ -205,6 +205,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const abortController = new AbortController();
     currentAbortController = abortController;
 
+    // Pre-compute whether this is a creation request
+    const isCreationReq = CREATION_KEYWORDS.some((kw) => content.trim().includes(kw));
+
     fetchStreamResponse(
       sessionId,
       aiMsgId,
@@ -215,6 +218,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       provider,
       state.deepThink,
       abortController.signal,
+      isCreationReq,
+      content.trim().slice(0, 20),
     );
   },
 
@@ -259,6 +264,8 @@ async function fetchStreamResponse(
   model: string,
   deepThink: boolean,
   signal: AbortSignal,
+  isCreationRequest: boolean = false,
+  projectTitle: string = '',
 ) {
   const addChunk = (type: 'thinking' | 'content', data: string) => {
     useChatStore.setState((s) => ({
@@ -279,13 +286,10 @@ async function fetchStreamResponse(
   };
 
   const finishStream = () => {
-    useChatStore.setState((s) => {
-      // Check if this looks like a creation request — inject plan card
-      const session = s.sessions.find((ss) => ss.id === sessionId);
-      const userMsg = session?.messages.find((m) => m.role === 'user' && !m.type);
-      const isCreationRequest = userMsg && CREATION_KEYWORDS.some((kw) => userMsg.content.includes(kw));
-
-      let updatedSessions = s.sessions.map((ss) => {
+    // First: mark streaming as done
+    useChatStore.setState((s) => ({
+      isGenerating: false,
+      sessions: s.sessions.map((ss) => {
         if (ss.id !== sessionId) return ss;
         return {
           ...ss,
@@ -293,29 +297,31 @@ async function fetchStreamResponse(
             m.id === aiMsgId ? { ...m, isStreaming: false } : m
           ),
         };
-      });
+      }),
+    }));
+    currentAbortController = null;
 
-      // Inject plan card if creation request
-      if (isCreationRequest) {
+    // Second: if creation request, inject plan card (separate setState to avoid race)
+    if (isCreationRequest) {
+      setTimeout(() => {
         const planCardMsg: ChatMessage = {
           id: generateId(),
           role: 'assistant',
-          content: '',
+          content: projectTitle,
           type: 'plan_card',
           timestamp: (() => {
             const n = new Date();
             return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
           })(),
         };
-        updatedSessions = updatedSessions.map((ss) => {
-          if (ss.id !== sessionId) return ss;
-          return { ...ss, messages: [...ss.messages, planCardMsg] };
-        });
-      }
-
-      return { isGenerating: false, sessions: updatedSessions };
-    });
-    currentAbortController = null;
+        useChatStore.setState((s) => ({
+          sessions: s.sessions.map((ss) => {
+            if (ss.id !== sessionId) return ss;
+            return { ...ss, messages: [...ss.messages, planCardMsg] };
+          }),
+        }));
+      }, 100);
+    }
   };
 
   const setError = (errMsg: string) => {

@@ -18,6 +18,7 @@ import {
 } from '@/store/usePipelineStore';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 // ═══════════════════════════════════════════════════
 // Quick fill hints
@@ -204,13 +205,36 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
 
         {/* Message content */}
         {(!isEmpty || !message.isStreaming) && (
-          <div className={cn('px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed whitespace-pre-wrap',
-            isUser ? 'bg-[#FBF7F4] text-[#383431] rounded-br-sm border border-[#F0E8DE]' : 'bg-white text-[#383431] rounded-bl-sm shadow-sm border border-[#EFEDEB]')}>
-            {message.content || (message.isStreaming ? '' : '...')}
-            {message.isStreaming && !message.content && !hasThinking && (
+          <div className={cn('px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed',
+            isUser ? 'bg-[#FBF7F4] text-[#383431] rounded-br-sm border border-[#F0E8DE]' : 'bg-white text-[#383431] rounded-bl-sm shadow-sm border border-[#EFEDEB]',
+            '[&_h1]:text-[18px] [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2',
+            '[&_h2]:text-[16px] [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2',
+            '[&_h3]:text-[14px] [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1',
+            '[&_p]:mb-2 [&_p]:leading-relaxed',
+            '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2',
+            '[&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2',
+            '[&_li]:mb-0.5',
+            '[&_strong]:font-semibold',
+            '[&_em]:italic',
+            '[&_blockquote]:border-l-3 [&_blockquote]:border-[#A8835F] [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-[#6E6862] [&_blockquote]:my-2',
+            '[&_code]:bg-[#F8F7F6] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px] [&_code]:font-mono',
+            '[&_pre]:bg-[#F8F7F6] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:overflow-x-auto [&_pre]:my-2',
+            '[&_pre_code]:bg-transparent [&_pre_code]:p-0',
+            '[&_hr]:border-[#DEDBD8] [&_hr]:my-3',
+            '[&_table]:w-full [&_table]:my-2',
+            '[&_th]:bg-[#F8F7F6] [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-semibold [&_th]:border [&_th]:border-[#DEDBD8]',
+            '[&_td]:px-2 [&_td]:py-1 [&_td]:text-[12px] [&_td]:border [&_td]:border-[#DEDBD8]',
+          ')}>
+            {isUser ? (
+              <span className="whitespace-pre-wrap">{message.content}</span>
+            ) : message.content ? (
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            ) : message.isStreaming && !hasThinking ? (
               <span className="inline-flex items-center gap-1 text-[12px] text-[#A8A39E]">
                 <Loader2 size={12} className="animate-spin" /> 思考中...
               </span>
+            ) : (
+              <span className="whitespace-pre-wrap">{message.content}</span>
             )}
             {message.isStreaming && message.content && (
               <span className="inline-block w-1.5 h-3.5 bg-[#A8835F] ml-0.5 animate-pulse" />
