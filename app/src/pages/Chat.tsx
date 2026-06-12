@@ -174,7 +174,6 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
 
   const isUser = message.role === 'user';
   const hasThinking = !!message.thinking;
-  const isEmpty = !message.content && !hasThinking;
   const isPlanCard = message.type === 'plan_card';
 
   // Plan card — render ModeSelectorCard
@@ -203,8 +202,8 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
           <ThinkingPanel thinking={message.thinking!} isStreaming={message.isStreaming} />
         )}
 
-        {/* Message content */}
-        {(!isEmpty || !message.isStreaming) && (
+        {/* Message content — 始终渲染，内部逻辑决定显示什么 */}
+        {(
           <div className={cn('px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed',
             isUser ? 'bg-[#FBF7F4] text-[#383431] rounded-br-sm border border-[#F0E8DE]' : 'bg-white text-[#383431] rounded-bl-sm shadow-sm border border-[#EFEDEB]',
             '[&_h1]:text-[18px] [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2',

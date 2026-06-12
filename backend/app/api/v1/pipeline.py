@@ -37,15 +37,16 @@ class ChatResponse(BaseModel):
 async def chat_with_ai(req: ChatRequest):
     """通用 AI 对话接口，非流式。"""
     try:
-        provider = get_provider(req.model)
+        provider, default_model = get_provider(req.model)
     except ValueError:
-        provider = get_provider("mimo")
+        provider, default_model = get_provider("mimo")
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
     try:
         reply = await provider.chat(
             messages=messages,
+            model=default_model,
             temperature=req.temperature,
             max_tokens=req.max_tokens,
             deep_think=req.deep_think,
@@ -62,9 +63,9 @@ async def chat_with_ai_stream(req: ChatRequest):
     import json as _json
 
     try:
-        provider = get_provider(req.model)
+        provider, default_model = get_provider(req.model)
     except ValueError:
-        provider = get_provider("mimo")
+        provider, default_model = get_provider("mimo")
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
 
@@ -72,6 +73,7 @@ async def chat_with_ai_stream(req: ChatRequest):
         try:
             async for chunk in provider.chat_stream(
                 messages=messages,
+                model=default_model,
                 temperature=req.temperature,
                 max_tokens=req.max_tokens,
                 deep_think=req.deep_think,

@@ -207,3 +207,46 @@
 - 面板内只做轻量交互，复杂编辑跳转专属页面
 - 6 个步骤的数据与对应页面共享同一份 store
 - 失败时暂停流程，用户决定重试或跳过
+
+---
+
+## [F-013] SSE 流式输出 + 思考面板 + 深度思考 + 取消生成 ← [R-013], [R-014], [R-015], [R-016]
+
+**状态**: 已完成  **实现时间**: 2026-06-12 01:40:00  **最后更新**: 2026-06-12 01:40:00
+
+**实现方式**:
+- **SSE 流式**: `fetchStreamResponse` 通过 `fetch` + `ReadableStream` 解析 SSE 分块（thinking/content/done）
+- **思考面板**: `ThinkingPanel` 组件，紫色主题，可折叠，默认折叠，流式光标
+- **深度思考**: `ModelSkillBar` 中的 toggle 按钮，紫色高亮，发送 `deep_think: true` 到后端
+- **取消生成**: `cancelGeneration` 中止 `AbortController`，标记消息为"（已取消）"
+- **Markdown 渲染**: `ReactMarkdown` + Tailwind typography classes（h1/h2/h3/p/ul/ol/code/pre/table/blockquote）
+- **后端 Provider 映射**: `get_provider` 返回 `(provider, default_model)` 元组，前端传 provider 名，后端自动用正确的模型名
+
+**关联文件**:
+- `src/store/useChatStore.ts` — fetchStreamResponse、cancelGeneration、CREATION_KEYWORDS
+- `src/pages/Chat.tsx` — ThinkingPanel、ReactMarkdown、取消按钮
+- `backend/app/services/llm_service.py` — OpenAICompatibleProvider.chat_stream、get_provider
+- `backend/app/api/v1/pipeline.py` — /chat/stream SSE 端点
+
+**已知问题**:
+- Pipeline 步骤仍使用 mock 数据（simulatePipeline），需接入真实后端 Pipeline API
+
+---
+
+## [F-014] FastAPI 后端框架 ← [R-021]
+
+**状态**: 已完成  **实现时间**: 2026-06-11 23:30:00  **最后更新**: 2026-06-12 01:40:00
+
+**实现方式**:
+- FastAPI 应用入口 (`main.py`) + CORS 中间件
+- 7 个路由模块: projects, scripts, characters, storyboards, generation, skills, pipeline
+- LLM 服务封装: MiMo / DeepSeek 统一调用（OpenAI 兼容协议）
+- SSE 流式输出: `StreamingResponse` + `event_generator`
+- Pipeline 状态管理: 内存存储（后续替换为 Redis）
+
+**关联文件**:
+- `backend/app/main.py`
+- `backend/app/config.py`
+- `backend/app/api/v1/*.py`
+- `backend/app/services/llm_service.py`
+- `backend/app/models/schemas.py`

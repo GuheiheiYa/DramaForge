@@ -45,7 +45,7 @@ function generateId() {
 }
 
 // ─── API ───
-const API_BASE = 'http://localhost:8001/api/v1';
+const API_BASE = 'http://localhost:8888/api/v1';
 
 const modelToProvider: Record<string, string> = {
   'mimo': 'mimo',
@@ -231,6 +231,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => {
       const sessionId = s.currentSessionId;
       if (!sessionId) return { isGenerating: false };
+      // 检查最后一条用户消息是否匹配创作关键词
+      const session = s.sessions.find((ss) => ss.id === sessionId);
+      const lastUser = session ? [...session.messages].reverse().find((m) => m.role === 'user') : null;
+      const isCreation = lastUser ? CREATION_KEYWORDS.some((kw) => lastUser.content.includes(kw)) : false;
+      if (isCreation) {
+        setTimeout(() => {
+          const planCardMsg: ChatMessage = {
+            id: generateId(),
+            role: 'assistant',
+            content: lastUser?.content.slice(0, 20) || '创作',
+            type: 'plan_card',
+            timestamp: (() => {
+              const n = new Date();
+              return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+            })(),
+          };
+          useChatStore.setState((prev) => ({
+            sessions: prev.sessions.map((ss) => {
+              if (ss.id !== sessionId) return ss;
+              return { ...ss, messages: [...ss.messages, planCardMsg] };
+            }),
+          }));
+        }, 100);
+      }
       return {
         isGenerating: false,
         sessions: s.sessions.map((ss) => {
@@ -339,6 +363,27 @@ async function fetchStreamResponse(
       }),
     }));
     currentAbortController = null;
+    // 出错时仍注入 plan_card（如果匹配创作请求），保证流程不中断
+    if (isCreationRequest) {
+      setTimeout(() => {
+        const planCardMsg: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          content: projectTitle,
+          type: 'plan_card',
+          timestamp: (() => {
+            const n = new Date();
+            return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+          })(),
+        };
+        useChatStore.setState((s) => ({
+          sessions: s.sessions.map((ss) => {
+            if (ss.id !== sessionId) return ss;
+            return { ...ss, messages: [...ss.messages, planCardMsg] };
+          }),
+        }));
+      }, 100);
+    }
   };
 
   try {
@@ -399,7 +444,7 @@ async function fetchStreamResponse(
   } catch (err: unknown) {
     const error = err instanceof Error ? err : new Error(String(err));
     if (error.name === 'AbortError') {
-      // User cancelled, already handled by cancelGeneration
+      // 用户取消，cancelGeneration 已处理状态和 plan_card 注入
       return;
     }
     setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:8001）`);

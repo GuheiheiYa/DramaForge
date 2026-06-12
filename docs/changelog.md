@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-12 01:40:00 — Bug 修复：Pipeline 面板 + Markdown 渲染 + API 契约统一
+
+**需求**: [R-012], [R-013], [R-014], [R-015], [R-016], [R-021]
+**问题**: [ISS-004]（已解决）, [ISS-005]（已解决）
+**修改文件**:
+- `app/src/store/useChatStore.ts` — 修复 cancelGeneration 注入 plan_card、setError 注入 plan_card、修正端口引用
+- `app/src/pages/Chat.tsx` — 修复内容 div 渲染条件（删除 `!isEmpty || !isStreaming` 外层判断）
+- `backend/app/services/llm_service.py` — get_provider 返回 (provider, default_model) 元组，修复模型名映射
+- `backend/app/api/v1/pipeline.py` — 适配 get_provider 新返回类型，传入 default_model
+
+**变更摘要**:
+- 修复前端-后端 API 契约不匹配（provider 名 vs 模型名）
+- 修复取消/错误场景下 plan_card 不注入的问题
+- 修复"思考中..."状态不显示的渲染条件 bug
+- 关闭 ISS-004（SSE 流式 + 思考面板）、ISS-005（Pipeline 面板 + Markdown）
+
+---
+
 ## 2026-06-11 23:30:00 — Chat Studio 前端实现 + Python 后端骨架 + MiMo 接入
 
 **需求**: [R-012], [R-021]

@@ -116,19 +116,24 @@ _providers: dict[str, LLMProvider] = {
 }
 
 
-def get_provider(name: str) -> LLMProvider:
-    """获取 LLM Provider 实例。"""
-    if name not in _providers:
-        raise ValueError(f"未知的 LLM Provider: {name}")
-    return _providers[name]
+def get_provider(name: str) -> tuple[LLMProvider, str]:
+    """获取 LLM Provider 实例及默认模型名。
+    返回 (provider, default_model)。"""
+    if name in _providers:
+        return _providers[name], _providers[name].default_model
+    # 前端可能直接传模型名（如 mimo-v2-pro），尝试匹配
+    for prov in _providers.values():
+        if name == prov.default_model:
+            return prov, name
+    raise ValueError(f"未知的 LLM Provider: {name}")
 
 
 async def generate_script(creative_input: str, skill_config: dict, provider_name: str = "mimo") -> str:
     """生成剧本。"""
-    provider = get_provider(provider_name)
+    provider, default_model = get_provider(provider_name)
     prompt = skill_config.get("prompt_template", "请根据以下创意生成剧本")
     messages = [
         {"role": "system", "content": f"你是一个专业的漫剧/短剧编剧。风格要求：{prompt}"},
         {"role": "user", "content": f"请根据以下创意生成完整的剧本：\n\n{creative_input}\n\n请包含：分集大纲、场景描述、角色对白、镜头提示。"},
     ]
-    return await provider.chat(messages)
+    return await provider.chat(messages, model=default_model)
