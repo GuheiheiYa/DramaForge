@@ -1,55 +1,141 @@
-"""分镜管理路由。"""
+"""分镜管理路由 — 数据库版本，支持完整 CRUD。"""
 
-from fastapi import APIRouter, HTTPException
+import uuid
+from datetime import datetime
 
-from app.models.schemas import ShotCreate, ShotResponse, MessageResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.db_models import StoryboardShot
+from app.models.schemas import (
+    ShotCreate, ShotUpdate, ShotResponse, MessageResponse,
+)
 
 router = APIRouter()
 
-_mock_shots: list[dict] = [
-    {"id": "shot_001", "shot_number": 1, "episode_number": 1, "scene_title": "樱花走廊", "description": "校园全景，樱花飘落，镜头缓缓推进到教学楼入口", "shot_type": "远景", "duration": 6, "camera_movement": "推进", "status": "done", "image_url": None, "video_url": None},
-    {"id": "shot_002", "shot_number": 2, "episode_number": 1, "scene_title": "樱花走廊", "description": "林小雨站在教室门口，深吸一口气", "shot_type": "中景", "duration": 5, "camera_movement": "固定", "status": "done", "image_url": None, "video_url": None},
-    {"id": "shot_003", "shot_number": 3, "episode_number": 1, "scene_title": "樱花走廊", "description": "小雨推开门，全班同学转头看向她", "shot_type": "过肩", "duration": 4, "camera_movement": "摇移", "status": "done", "image_url": None, "video_url": None},
-    {"id": "shot_004", "shot_number": 4, "episode_number": 1, "scene_title": "记忆闪现", "description": "小雨碰到陈明的手，瞳孔特写，画面闪白", "shot_type": "特写", "duration": 3, "camera_movement": "固定", "status": "generating", "image_url": None, "video_url": None},
-]
+
+def _to_response(s: StoryboardShot) -> ShotResponse:
+    """ORM 对象 → Pydantic 响应。"""
+    return ShotResponse(
+        id=s.id,
+        project_id=s.project_id,
+        shot_number=s.shot_number,
+        shot_type=s.shot_type or "中景",
+        duration=s.duration or 5,
+        status=s.status or "等待中",
+        description=s.description or "",
+        camera_movement=s.camera_movement or "固定",
+        composition=s.composition or "",
+        lighting=s.lighting or "",
+        character_action=s.character_action or "",
+        dialogue=s.dialogue or "",
+        scene_ref=s.scene_ref or "",
+        characters=s.characters or [],
+        created_at=s.created_at,
+        updated_at=s.updated_at,
+    )
 
 
 @router.get("", response_model=list[ShotResponse])
-async def list_shots(project_id: str | None = None, episode: int | None = None):
+async def list_shots(
+    project_id: str | None = Query(None, description="按项目 ID 筛选"),
+    db: AsyncSession = Depends(get_db),
+):
     """获取分镜列表。"""
-    results = _mock_shots
-    if episode is not None:
-        results = [s for s in results if s["episode_number"] == episode]
-    return results
+    stmt = select(StoryboardShot)
+    if project_id:
+        stmt = stmt.where(StoryboardShot.project_id == project_id)
+    stmt = stmt.order_by(StoryboardShot.shot_number)
+    result = await db.execute(stmt)
+    return [_to_response(s) for s in result.scalars().all()]
 
 
 @router.post("", response_model=ShotResponse)
-async def create_shot(req: ShotCreate):
+async def create_shot(req: ShotCreate, db: AsyncSession = Depends(get_db)):
     """创建分镜。"""
-    shot_id = f"shot_{len(_mock_shots) + 1:03d}"
-    shot = {
-        "id": shot_id,
-        "shot_number": len(_mock_shots) + 1,
-        "episode_number": req.episode_number,
-        "scene_title": req.scene_title,
-        "description": req.description,
-        "shot_type": req.shot_type,
-        "duration": req.duration,
-        "camera_movement": req.camera_movement,
-        "status": "draft",
-        "image_url": None,
-        "video_url": None,
-    }
-    _mock_shots.append(shot)
-    return shot
+    shot = StoryboardShot(
+        id=f"shot_{uuid.uuid4().hex[:12]}",
+        project_id=req.project_id,
+        shot_number=req.shot_number,
+        shot_type=req.shot_type,
+        duration=req.duration,
+        status=req.status,
+        description=req.description,
+        camera_movement=req.camera_movement,
+        composition=req.composition,
+        lighting=req.lighting,
+        character_action=req.character_action,
+        dialogue=req.dialogue,
+        scene_ref=req.scene_ref,
+        characters=req.characters,
+    )
+    db.add(shot)
+    await db.flush()
+    return _to_response(shot)
+
+
+@router.post("/batch", response_model=list[ShotResponse])
+async def create_shots_batch(req: list[ShotCreate], db: AsyncSession = Depends(get_db)):
+    """批量创建分镜。"""
+    shots = []
+    for item in req:
+        shot = StoryboardShot(
+            id=f"shot_{uuid.uuid4().hex[:12]}",
+            project_id=item.project_id,
+            shot_number=item.shot_number,
+            shot_type=item.shot_type,
+            duration=item.duration,
+            status=item.status,
+            description=item.description,
+            camera_movement=item.camera_movement,
+            composition=item.composition,
+            lighting=item.lighting,
+            character_action=item.character_action,
+            dialogue=item.dialogue,
+            scene_ref=item.scene_ref,
+            characters=item.characters,
+        )
+        db.add(shot)
+        shots.append(shot)
+    await db.flush()
+    return [_to_response(s) for s in shots]
+
+
+@router.get("/{shot_id}", response_model=ShotResponse)
+async def get_shot(shot_id: str, db: AsyncSession = Depends(get_db)):
+    """获取分镜详情。"""
+    result = await db.execute(select(StoryboardShot).where(StoryboardShot.id == shot_id))
+    shot = result.scalar_one_or_none()
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+    return _to_response(shot)
+
+
+@router.put("/{shot_id}", response_model=ShotResponse)
+async def update_shot(shot_id: str, req: ShotUpdate, db: AsyncSession = Depends(get_db)):
+    """更新分镜。"""
+    result = await db.execute(select(StoryboardShot).where(StoryboardShot.id == shot_id))
+    shot = result.scalar_one_or_none()
+    if not shot:
+        raise HTTPException(status_code=404, detail="分镜不存在")
+
+    update_data = req.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(shot, key, value)
+    shot.updated_at = datetime.now()
+    await db.flush()
+    return _to_response(shot)
 
 
 @router.delete("/{shot_id}", response_model=MessageResponse)
-async def delete_shot(shot_id: str):
+async def delete_shot(shot_id: str, db: AsyncSession = Depends(get_db)):
     """删除分镜。"""
-    global _mock_shots
-    before = len(_mock_shots)
-    _mock_shots = [s for s in _mock_shots if s["id"] != shot_id]
-    if len(_mock_shots) == before:
+    result = await db.execute(select(StoryboardShot).where(StoryboardShot.id == shot_id))
+    shot = result.scalar_one_or_none()
+    if not shot:
         raise HTTPException(status_code=404, detail="分镜不存在")
+    await db.delete(shot)
+    await db.flush()
     return MessageResponse(message=f"分镜 {shot_id} 已删除")

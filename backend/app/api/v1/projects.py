@@ -1,82 +1,107 @@
-"""项目管理路由。"""
+"""项目管理路由 — 数据库版本。"""
 
+import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
+from app.models.db_models import Project
 from app.models.schemas import (
-    ProjectCreate, ProjectResponse, ProjectStatus, ProjectType, MessageResponse
+    ProjectCreate, ProjectUpdate, ProjectResponse, MessageResponse,
 )
 
 router = APIRouter()
 
-# Mock 数据（后续替换为数据库）
-_mock_projects: dict[str, dict] = {}
 
-
-def _init_mock():
-    """初始化 mock 数据。"""
-    if _mock_projects:
-        return
-    samples = [
-        {"id": "proj_001", "name": "《樱花下的约定》第1季", "type": ProjectType.COMIC, "status": ProjectStatus.IN_PROGRESS, "progress": 65, "current_episode": 3, "total_episodes": 8, "skill_name": "日式校园漫剧SKILL"},
-        {"id": "proj_002", "name": "《都市神医》短剧系列", "type": ProjectType.SHORT, "status": ProjectStatus.GENERATING, "progress": 42, "current_episode": 2, "total_episodes": 12, "skill_name": "都市逆袭短剧SKILL"},
-        {"id": "proj_003", "name": "《九霄仙途》古风仙侠", "type": ProjectType.COMIC, "status": ProjectStatus.DRAFT, "progress": 10, "current_episode": 1, "total_episodes": 20, "skill_name": "古风仙侠漫剧SKILL"},
-    ]
-    for s in samples:
-        _mock_projects[s["id"]] = {**s, "created_at": datetime.now(), "updated_at": datetime.now()}
-
-
-_init_mock()
+def _to_response(p: Project) -> ProjectResponse:
+    """ORM 对象 → Pydantic 响应。"""
+    return ProjectResponse(
+        id=p.id,
+        name=p.name,
+        type=p.type or "漫剧",
+        status=p.status or "草稿",
+        description=p.description or "",
+        episodes=p.episodes or 8,
+        current_episode=p.current_episode or 1,
+        progress=p.progress or 0,
+        skill_id=p.skill_id or "",
+        skill_name=p.skill_name or "",
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+    )
 
 
 @router.get("", response_model=list[ProjectResponse])
 async def list_projects(
-    type: str | None = None,
-    status: str | None = None,
+    type: str | None = Query(None, description="项目类型筛选"),
+    status: str | None = Query(None, description="状态筛选"),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取项目列表。"""
-    results = list(_mock_projects.values())
+    stmt = select(Project)
     if type:
-        results = [p for p in results if p["type"].value == type]
+        stmt = stmt.where(Project.type == type)
     if status:
-        results = [p for p in results if p["status"].value == status]
-    return results
+        stmt = stmt.where(Project.status == status)
+    stmt = stmt.order_by(Project.updated_at.desc())
+    result = await db.execute(stmt)
+    return [_to_response(p) for p in result.scalars().all()]
 
 
 @router.post("", response_model=ProjectResponse)
-async def create_project(req: ProjectCreate):
+async def create_project(req: ProjectCreate, db: AsyncSession = Depends(get_db)):
     """创建新项目。"""
-    project_id = f"proj_{len(_mock_projects) + 1:03d}"
-    now = datetime.now()
-    project = {
-        "id": project_id,
-        "name": req.name,
-        "type": req.type,
-        "status": ProjectStatus.DRAFT,
-        "progress": 0,
-        "current_episode": 1,
-        "total_episodes": req.episodes,
-        "skill_name": req.skill_id,
-        "created_at": now,
-        "updated_at": now,
-    }
-    _mock_projects[project_id] = project
-    return project
+    project = Project(
+        id=f"proj_{uuid.uuid4().hex[:12]}",
+        name=req.name,
+        type=req.type,
+        status="草稿",
+        description=req.description,
+        episodes=req.episodes,
+        skill_id=req.skill_id,
+        skill_name=req.skill_name,
+    )
+    db.add(project)
+    await db.flush()
+    return _to_response(project)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: str):
+async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     """获取项目详情。"""
-    if project_id not in _mock_projects:
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    return _mock_projects[project_id]
+    return _to_response(project)
+
+
+@router.put("/{project_id}", response_model=ProjectResponse)
+async def update_project(project_id: str, req: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+    """更新项目。"""
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    update_data = req.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(project, key, value)
+    project.updated_at = datetime.now()
+    await db.flush()
+    return _to_response(project)
 
 
 @router.delete("/{project_id}", response_model=MessageResponse)
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     """删除项目。"""
-    if project_id not in _mock_projects:
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    del _mock_projects[project_id]
+    await db.delete(project)
+    await db.flush()
     return MessageResponse(message=f"项目 {project_id} 已删除")

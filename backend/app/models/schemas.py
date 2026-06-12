@@ -1,4 +1,4 @@
-"""Pydantic 数据模型定义。"""
+"""Pydantic 数据模型 — 对齐前端 mock 数据结构，所有 ID 使用 UUID。"""
 
 from datetime import datetime
 from enum import Enum
@@ -21,23 +21,6 @@ class ProjectType(str, Enum):
     SHORT = "短剧"
 
 
-class PipelineStepId(str, Enum):
-    SCRIPT = "script"
-    CHARACTER = "character"
-    STORYBOARD = "storyboard"
-    VIDEO = "video"
-    AUDIO = "audio"
-    COMPOSE = "compose"
-
-
-class StepStatus(str, Enum):
-    WAITING = "waiting"
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-    SKIPPED = "skipped"
-
-
 class PipelineMode(str, Enum):
     AUTO = "auto"
     CONFIRM = "confirm"
@@ -48,22 +31,38 @@ class PipelineMode(str, Enum):
 
 class ProjectCreate(BaseModel):
     """创建项目请求。"""
-    name: str = Field(..., min_length=1, max_length=100, description="项目名称")
-    type: ProjectType = Field(default=ProjectType.COMIC, description="项目类型")
+    name: str = Field(..., min_length=1, max_length=200, description="项目名称")
+    type: str = Field(default="漫剧", description="项目类型: 漫剧/短剧")
     description: str = Field(default="", max_length=500, description="项目描述")
-    episodes: int = Field(default=8, ge=1, le=100, description="集数")
+    episodes: int = Field(default=8, ge=1, le=100, description="总集数")
     skill_id: str = Field(default="", description="SKILL ID")
+    skill_name: str = Field(default="", description="SKILL 名称")
+
+
+class ProjectUpdate(BaseModel):
+    """更新项目请求。"""
+    name: str | None = None
+    type: str | None = None
+    status: str | None = None
+    description: str | None = None
+    episodes: int | None = None
+    current_episode: int | None = None
+    progress: int | None = None
+    skill_id: str | None = None
+    skill_name: str | None = None
 
 
 class ProjectResponse(BaseModel):
     """项目响应。"""
     id: str
     name: str
-    type: ProjectType
-    status: ProjectStatus
-    progress: int
+    type: str
+    status: str
+    description: str
+    episodes: int
     current_episode: int
-    total_episodes: int
+    progress: int
+    skill_id: str
     skill_name: str
     created_at: datetime
     updated_at: datetime
@@ -71,22 +70,38 @@ class ProjectResponse(BaseModel):
 
 # ─── 剧本 ───
 
-class SceneData(BaseModel):
-    """场景数据。"""
+class ScriptBlockData(BaseModel):
+    """剧本块数据 — 对齐前端 ScriptBlock 类型。"""
     id: str = ""
+    type: str = Field(default="dialogue", description="块类型: scene/character/emotion/action/sound/transition/dialogue/narration/note")
+    content: str = ""
+    sort_order: int = 0
+
+
+class SceneData(BaseModel):
+    """场景数据 — 对齐前端 Scene 类型。"""
+    id: str = ""
+    number: int = 1
     title: str
-    summary: str = ""
     location: str = "未指定"
     time_tag: str = "日间"
-    dialogue: str = ""
+    summary: str = ""
+    blocks: list[ScriptBlockData] = Field(default_factory=list)
 
 
 class EpisodeData(BaseModel):
-    """分集数据。"""
+    """分集数据 — 对齐前端 Episode 类型。"""
     id: str = ""
     number: int
     title: str
-    scenes: list[SceneData] = []
+    scenes: list[SceneData] = Field(default_factory=list)
+
+
+class ScriptCreate(BaseModel):
+    """创建剧本请求。"""
+    project_id: str = Field(default="default", description="所属项目 ID")
+    title: str = Field(..., min_length=1, max_length=200)
+    episodes: list[EpisodeData] = Field(default_factory=list)
 
 
 class ScriptResponse(BaseModel):
@@ -99,17 +114,25 @@ class ScriptResponse(BaseModel):
     updated_at: datetime
 
 
-class ScriptCreate(BaseModel):
-    """创建剧本请求。"""
-    project_id: str = Field(default="default", description="所属项目 ID")
-    title: str = Field(..., min_length=1, max_length=200)
-    episodes: list[EpisodeData] = Field(default_factory=list)
-
-
 # ─── 角色 ───
 
+class CharacterAssetData(BaseModel):
+    """角色资产数据。"""
+    id: str = ""
+    type: str = "立绘"
+    name: str = ""
+    thumbnail: str = ""
+
+
+class CharacterRelationshipData(BaseModel):
+    """角色关系数据。"""
+    target_character_id: str = ""
+    target_name: str = ""
+    relation: str = ""
+
+
 class CharacterCreate(BaseModel):
-    """创建角色请求。"""
+    """创建角色请求 — 对齐前端 Character 类型。"""
     project_id: str = Field(default="default", description="所属项目 ID")
     name: str = Field(..., min_length=1, max_length=50)
     role: str = Field(default="配角", description="主角/配角/龙套")
@@ -117,15 +140,42 @@ class CharacterCreate(BaseModel):
     age: int = Field(default=0, ge=0)
     description: str = Field(default="", max_length=500)
     personality: str = Field(default="", max_length=300)
+    personality_traits: list[str] = Field(default_factory=list, description="性格标签")
     appearance: str = Field(default="", max_length=300)
     costume: str = Field(default="", max_length=300)
     background: str = Field(default="", max_length=500)
     special_setting: str = Field(default="", max_length=300)
     avatar_color: str = Field(default="#A8835F", max_length=20)
+    avatar_url: str = Field(default="", max_length=500)
+    has_generated_image: bool = Field(default=False)
+    assets: list[CharacterAssetData] = Field(default_factory=list)
+    relationships: list[CharacterRelationshipData] = Field(default_factory=list)
+    scenes: list[str] = Field(default_factory=list, description="出场场景列表")
+
+
+class CharacterUpdate(BaseModel):
+    """更新角色请求。"""
+    name: str | None = None
+    role: str | None = None
+    gender: str | None = None
+    age: int | None = None
+    description: str | None = None
+    personality: str | None = None
+    personality_traits: list[str] | None = None
+    appearance: str | None = None
+    costume: str | None = None
+    background: str | None = None
+    special_setting: str | None = None
+    avatar_color: str | None = None
+    avatar_url: str | None = None
+    has_generated_image: bool | None = None
+    assets: list[CharacterAssetData] | None = None
+    relationships: list[CharacterRelationshipData] | None = None
+    scenes: list[str] | None = None
 
 
 class CharacterResponse(BaseModel):
-    """角色响应。"""
+    """角色响应 — 对齐前端 Character 类型。"""
     id: str
     project_id: str
     name: str
@@ -134,6 +184,7 @@ class CharacterResponse(BaseModel):
     age: int
     description: str
     personality: str
+    personality_traits: list[str]
     appearance: str
     costume: str
     background: str
@@ -141,6 +192,9 @@ class CharacterResponse(BaseModel):
     avatar_color: str
     avatar_url: str
     has_generated_image: bool
+    assets: list[CharacterAssetData]
+    relationships: list[CharacterRelationshipData]
+    scenes: list[str]
     created_at: datetime
     updated_at: datetime
 
@@ -148,29 +202,56 @@ class CharacterResponse(BaseModel):
 # ─── 分镜 ───
 
 class ShotCreate(BaseModel):
-    """创建分镜请求。"""
-    episode_number: int
-    scene_title: str
-    description: str
-    shot_type: str = "中景"
-    duration: int = Field(default=5, ge=1, le=30)
-    camera_movement: str = "固定"
-    characters: list[str] = []
+    """创建分镜请求 — 对齐前端 Shot 类型。"""
+    project_id: str = Field(default="default", description="所属项目 ID")
+    shot_number: int = Field(default=1, ge=1)
+    shot_type: str = Field(default="中景", description="远景/全景/中景/近景/特写")
+    duration: int = Field(default=5, ge=1, le=60)
+    status: str = Field(default="等待中", description="等待中/生成中/已完成/失败/草稿")
+    description: str = Field(default="")
+    camera_movement: str = Field(default="固定")
+    composition: str = Field(default="")
+    lighting: str = Field(default="")
+    character_action: str = Field(default="")
+    dialogue: str = Field(default="")
+    scene_ref: str = Field(default="")
+    characters: list[str] = Field(default_factory=list)
+
+
+class ShotUpdate(BaseModel):
+    """更新分镜请求。"""
+    shot_number: int | None = None
+    shot_type: str | None = None
+    duration: int | None = None
+    status: str | None = None
+    description: str | None = None
+    camera_movement: str | None = None
+    composition: str | None = None
+    lighting: str | None = None
+    character_action: str | None = None
+    dialogue: str | None = None
+    scene_ref: str | None = None
+    characters: list[str] | None = None
 
 
 class ShotResponse(BaseModel):
-    """分镜响应。"""
+    """分镜响应 — 对齐前端 Shot 类型。"""
     id: str
+    project_id: str
     shot_number: int
-    episode_number: int
-    scene_title: str
-    description: str
     shot_type: str
     duration: int
-    camera_movement: str
     status: str
-    image_url: str | None = None
-    video_url: str | None = None
+    description: str
+    camera_movement: str
+    composition: str
+    lighting: str
+    character_action: str
+    dialogue: str
+    scene_ref: str
+    characters: list[str]
+    created_at: datetime
+    updated_at: datetime
 
 
 # ─── Pipeline ───

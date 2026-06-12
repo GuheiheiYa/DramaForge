@@ -1,5 +1,30 @@
 # 更新日志
 
+## 2026-06-12 17:15:00 — 全量数据库重建 + 前后端 CRUD 对接
+
+**需求**: [R-012], [R-021]
+**修改文件**:
+- `backend/app/models/db_models.py` — 重建 7 张表（projects/scripts/episodes/scenes/script_blocks/characters/storyboard_shots）
+- `backend/app/models/schemas.py` — 全部 schema 对齐前端 mock 数据结构
+- `backend/app/api/v1/projects.py` — 改为数据库操作，新增 UPDATE 端点
+- `backend/app/api/v1/scripts.py` — 补全 list 端点，支持剧本块 CRUD
+- `backend/app/api/v1/characters.py` — 支持 personality_traits/assets/relationships/scenes JSON 字段
+- `backend/app/api/v1/storyboards.py` — 改为数据库操作，新增 batch 端点
+- `backend/app/api/v1/pipeline.py` — save 端点适配新 schema
+- `backend/seed.py` — 重建并灌入完整 mock 数据
+- `app/src/lib/api.ts` — 补全 Projects/Scripts/Characters/Storyboards API 函数
+
+**变更摘要**:
+- 所有表 ID 统一使用 UUID 格式（如 `proj_a1b2c3d4e5f6`）
+- 7 张表通过外键关联：projects → scripts → episodes → scenes → script_blocks
+- projects → characters（一对多）
+- projects → storyboard_shots（一对多）
+- 角色表新增 personality_traits(JSON)、assets_json、relationships_json、scenes_json
+- 分镜表对齐前端 Shot 类型全部字段
+- 前端 API 层覆盖 Projects/Scripts/Characters/Storyboards 四大资源
+
+---
+
 ## 2026-06-12 16:00:00 — Pipeline 全流程修复 + 端口迁移 + 调试日志
 
 **问题**: [ISS-005]

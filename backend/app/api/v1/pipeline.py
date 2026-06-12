@@ -233,15 +233,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
-from app.models.db_models import Script, Episode, Scene, Character
-from app.models.schemas import ScriptCreate, CharacterCreate, ScriptResponse, CharacterResponse
+from app.models.db_models import Script, Episode, Scene, ScriptBlock, Character
+from app.models.schemas import ScriptCreate, CharacterCreate, ScriptResponse, CharacterResponse, EpisodeData, SceneData
 
 
 @router.post("/save-script", response_model=ScriptResponse)
 async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
     """保存 Pipeline 提取的剧本数据到数据库。"""
     script = Script(
-        id=f"scr_{uuid.uuid4().hex[:8]}",
+        id=f"scr_{uuid.uuid4().hex[:12]}",
         project_id=req.project_id,
         title=req.title,
     )
@@ -249,7 +249,7 @@ async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
     for ep_data in req.episodes:
         episode = Episode(
-            id=f"ep_{uuid.uuid4().hex[:8]}",
+            id=f"ep_{uuid.uuid4().hex[:12]}",
             script_id=script.id,
             number=ep_data.number,
             title=ep_data.title,
@@ -258,9 +258,9 @@ async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
         for idx, scene_data in enumerate(ep_data.scenes):
             scene = Scene(
-                id=f"sc_{uuid.uuid4().hex[:8]}",
+                id=f"sc_{uuid.uuid4().hex[:12]}",
                 episode_id=episode.id,
-                number=idx + 1,
+                number=scene_data.number if scene_data.number else idx + 1,
                 title=scene_data.title,
                 summary=scene_data.summary,
                 location=scene_data.location,
@@ -282,10 +282,10 @@ async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
     episodes = []
     for ep in sorted(saved.episodes, key=lambda e: e.number):
         scenes = [
-            {"id": s.id, "title": s.title, "summary": s.summary or "", "location": s.location or "", "time_tag": s.time_tag or ""}
+            SceneData(id=s.id, number=s.number, title=s.title, summary=s.summary or "", location=s.location or "", time_tag=s.time_tag or "")
             for s in sorted(ep.scenes, key=lambda s: s.number)
         ]
-        episodes.append({"id": ep.id, "number": ep.number, "title": ep.title, "scenes": scenes})
+        episodes.append(EpisodeData(id=ep.id, number=ep.number, title=ep.title, scenes=scenes))
 
     return ScriptResponse(
         id=saved.id,
@@ -309,7 +309,7 @@ async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends
     saved = []
     for char_data in req.characters:
         char = Character(
-            id=f"char_{uuid.uuid4().hex[:8]}",
+            id=f"char_{uuid.uuid4().hex[:12]}",
             project_id=req.project_id,
             name=char_data.name,
             role=char_data.role,
@@ -317,11 +317,17 @@ async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends
             age=char_data.age,
             description=char_data.description,
             personality=char_data.personality,
+            personality_traits=char_data.personality_traits,
             appearance=char_data.appearance,
             costume=char_data.costume,
             background=char_data.background,
             special_setting=char_data.special_setting,
             avatar_color=char_data.avatar_color,
+            avatar_url=char_data.avatar_url,
+            has_generated_image=char_data.has_generated_image,
+            assets_json=[a.model_dump() for a in char_data.assets],
+            relationships_json=[r.model_dump() for r in char_data.relationships],
+            scenes_json=char_data.scenes,
         )
         db.add(char)
         saved.append(char)
@@ -333,11 +339,12 @@ async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends
             id=c.id,
             project_id=c.project_id,
             name=c.name,
-            role=c.role,
+            role=c.role or "配角",
             gender=c.gender or "",
             age=c.age or 0,
             description=c.description or "",
             personality=c.personality or "",
+            personality_traits=c.personality_traits or [],
             appearance=c.appearance or "",
             costume=c.costume or "",
             background=c.background or "",
@@ -345,6 +352,9 @@ async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends
             avatar_color=c.avatar_color or "#A8835F",
             avatar_url=c.avatar_url or "",
             has_generated_image=bool(c.avatar_url),
+            assets=[],
+            relationships=[],
+            scenes=c.scenes_json or [],
             created_at=c.created_at,
             updated_at=c.updated_at,
         )

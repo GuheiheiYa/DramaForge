@@ -1,4 +1,4 @@
-"""角色管理路由 — 数据库版本。"""
+"""角色管理路由 — 数据库版本，支持完整 CRUD。"""
 
 import uuid
 from datetime import datetime
@@ -9,31 +9,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.db_models import Character
-from app.models.schemas import CharacterCreate, CharacterResponse, MessageResponse
+from app.models.schemas import (
+    CharacterCreate, CharacterUpdate, CharacterResponse,
+    CharacterAssetData, CharacterRelationshipData, MessageResponse,
+)
 
 router = APIRouter()
 
 
-def _to_response(char: Character) -> CharacterResponse:
+def _to_response(c: Character) -> CharacterResponse:
     """ORM 对象 → Pydantic 响应。"""
     return CharacterResponse(
-        id=char.id,
-        project_id=char.project_id,
-        name=char.name,
-        role=char.role,
-        gender=char.gender or "",
-        age=char.age or 0,
-        description=char.description or "",
-        personality=char.personality or "",
-        appearance=char.appearance or "",
-        costume=char.costume or "",
-        background=char.background or "",
-        special_setting=char.special_setting or "",
-        avatar_color=char.avatar_color or "#A8835F",
-        avatar_url=char.avatar_url or "",
-        has_generated_image=bool(char.avatar_url),
-        created_at=char.created_at,
-        updated_at=char.updated_at,
+        id=c.id,
+        project_id=c.project_id,
+        name=c.name,
+        role=c.role or "配角",
+        gender=c.gender or "",
+        age=c.age or 0,
+        description=c.description or "",
+        personality=c.personality or "",
+        personality_traits=c.personality_traits or [],
+        appearance=c.appearance or "",
+        costume=c.costume or "",
+        background=c.background or "",
+        special_setting=c.special_setting or "",
+        avatar_color=c.avatar_color or "#A8835F",
+        avatar_url=c.avatar_url or "",
+        has_generated_image=bool(c.avatar_url),
+        assets=[CharacterAssetData(**a) for a in (c.assets_json or [])],
+        relationships=[CharacterRelationshipData(**r) for r in (c.relationships_json or [])],
+        scenes=c.scenes_json or [],
+        created_at=c.created_at,
+        updated_at=c.updated_at,
     )
 
 
@@ -46,6 +53,7 @@ async def list_characters(
     stmt = select(Character)
     if project_id:
         stmt = stmt.where(Character.project_id == project_id)
+    stmt = stmt.order_by(Character.updated_at.desc())
     result = await db.execute(stmt)
     return [_to_response(c) for c in result.scalars().all()]
 
@@ -54,7 +62,7 @@ async def list_characters(
 async def create_character(req: CharacterCreate, db: AsyncSession = Depends(get_db)):
     """创建角色。"""
     char = Character(
-        id=f"char_{uuid.uuid4().hex[:8]}",
+        id=f"char_{uuid.uuid4().hex[:12]}",
         project_id=req.project_id,
         name=req.name,
         role=req.role,
@@ -62,11 +70,17 @@ async def create_character(req: CharacterCreate, db: AsyncSession = Depends(get_
         age=req.age,
         description=req.description,
         personality=req.personality,
+        personality_traits=req.personality_traits,
         appearance=req.appearance,
         costume=req.costume,
         background=req.background,
         special_setting=req.special_setting,
         avatar_color=req.avatar_color,
+        avatar_url=req.avatar_url,
+        has_generated_image=req.has_generated_image,
+        assets_json=[a.model_dump() for a in req.assets],
+        relationships_json=[r.model_dump() for r in req.relationships],
+        scenes_json=req.scenes,
     )
     db.add(char)
     await db.flush()
@@ -84,30 +98,27 @@ async def get_character(character_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{character_id}", response_model=CharacterResponse)
-async def update_character(
-    character_id: str,
-    req: CharacterCreate,
-    db: AsyncSession = Depends(get_db),
-):
+async def update_character(character_id: str, req: CharacterUpdate, db: AsyncSession = Depends(get_db)):
     """更新角色。"""
     result = await db.execute(select(Character).where(Character.id == character_id))
     char = result.scalar_one_or_none()
     if not char:
         raise HTTPException(status_code=404, detail="角色不存在")
 
-    char.name = req.name
-    char.role = req.role
-    char.gender = req.gender
-    char.age = req.age
-    char.description = req.description
-    char.personality = req.personality
-    char.appearance = req.appearance
-    char.costume = req.costume
-    char.background = req.background
-    char.special_setting = req.special_setting
-    char.avatar_color = req.avatar_color
-    char.updated_at = datetime.now()
+    update_data = req.model_dump(exclude_unset=True)
 
+    # JSON 字段需要特殊处理
+    if "assets" in update_data:
+        update_data["assets_json"] = [a.model_dump() if hasattr(a, "model_dump") else a for a in update_data.pop("assets")]
+    if "relationships" in update_data:
+        update_data["relationships_json"] = [r.model_dump() if hasattr(r, "model_dump") else r for r in update_data.pop("relationships")]
+    if "scenes" in update_data:
+        update_data["scenes_json"] = update_data.pop("scenes")
+
+    for key, value in update_data.items():
+        setattr(char, key, value)
+    char.updated_at = datetime.now()
+    await db.flush()
     return _to_response(char)
 
 
@@ -118,6 +129,6 @@ async def delete_character(character_id: str, db: AsyncSession = Depends(get_db)
     char = result.scalar_one_or_none()
     if not char:
         raise HTTPException(status_code=404, detail="角色不存在")
-
     await db.delete(char)
-    return MessageResponse(message=f"角色 {char.name} 已删除")
+    await db.flush()
+    return MessageResponse(message=f"角色 {character_id} 已删除")

@@ -18,21 +18,88 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return resp.json();
 }
 
-// ─── 剧本 API ───
+// ─── Projects API ───
+
+export interface ProjectData {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  description: string;
+  episodes: number;
+  current_episode: number;
+  progress: number;
+  skill_id: string;
+  skill_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getProjects = (params?: { type?: string; status?: string }) => {
+  const qs = new URLSearchParams();
+  if (params?.type) qs.set('type', params.type);
+  if (params?.status) qs.set('status', params.status);
+  const query = qs.toString();
+  return request<ProjectData[]>(`/projects${query ? '?' + query : ''}`);
+};
+
+export const createProject = (data: {
+  name: string;
+  type?: string;
+  description?: string;
+  episodes?: number;
+  skill_id?: string;
+  skill_name?: string;
+}) => request<ProjectData>('/projects', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const getProject = (id: string) => request<ProjectData>(`/projects/${id}`);
+
+export const updateProject = (id: string, data: Partial<{
+  name: string;
+  type: string;
+  status: string;
+  description: string;
+  episodes: number;
+  current_episode: number;
+  progress: number;
+  skill_id: string;
+  skill_name: string;
+}>) => request<ProjectData>(`/projects/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
+
+export const deleteProject = (id: string) => request<{ message: string }>(`/projects/${id}`, {
+  method: 'DELETE',
+});
+
+// ─── Scripts API ───
+
+export interface ScriptBlockData {
+  id?: string;
+  type: string;
+  content: string;
+  sort_order?: number;
+}
 
 export interface SceneData {
-  id: string;
+  id?: string;
+  number?: number;
   title: string;
-  summary: string;
-  location: string;
-  time_tag: string;
+  location?: string;
+  time_tag?: string;
+  summary?: string;
+  blocks?: ScriptBlockData[];
 }
 
 export interface EpisodeData {
-  id: string;
+  id?: string;
   number: number;
   title: string;
-  scenes: SceneData[];
+  scenes?: SceneData[];
 }
 
 export interface ScriptData {
@@ -44,49 +111,48 @@ export interface ScriptData {
   updated_at: string;
 }
 
-export interface ScriptCreateRequest {
+export const getScripts = (projectId?: string) => {
+  const qs = projectId ? `?project_id=${projectId}` : '';
+  return request<ScriptData[]>(`/scripts${qs}`);
+};
+
+export const createScript = (data: {
   project_id?: string;
   title: string;
-  episodes: Array<{
-    number: number;
-    title: string;
-    scenes: Array<{
-      title: string;
-      summary: string;
-      location?: string;
-      time_tag?: string;
-    }>;
-  }>;
+  episodes?: EpisodeData[];
+}) => request<ScriptData>('/scripts', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const getScript = (id: string) => request<ScriptData>(`/scripts/${id}`);
+
+export const updateScript = (id: string, data: {
+  title: string;
+  episodes?: EpisodeData[];
+}) => request<ScriptData>(`/scripts/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
+
+export const deleteScript = (id: string) => request<{ message: string }>(`/scripts/${id}`, {
+  method: 'DELETE',
+});
+
+// ─── Characters API ───
+
+export interface CharacterAsset {
+  id?: string;
+  type?: string;
+  name?: string;
+  thumbnail?: string;
 }
 
-/** 创建剧本。 */
-export async function createScript(data: ScriptCreateRequest): Promise<ScriptData> {
-  return request<ScriptData>('/scripts/', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+export interface CharacterRelationship {
+  target_character_id?: string;
+  target_name?: string;
+  relation?: string;
 }
-
-/** 获取项目剧本。 */
-export async function getScript(projectId: string): Promise<ScriptData> {
-  return request<ScriptData>(`/scripts/${projectId}`);
-}
-
-/** 更新场景。 */
-export async function updateScene(sceneId: string, data: { title?: string; summary?: string; location?: string }): Promise<void> {
-  const params = new URLSearchParams();
-  if (data.title !== undefined) params.set('title', data.title);
-  if (data.summary !== undefined) params.set('summary', data.summary);
-  if (data.location !== undefined) params.set('location', data.location);
-  await request(`/scripts/scenes/${sceneId}?${params}`, { method: 'PUT' });
-}
-
-/** 删除剧本。 */
-export async function deleteScript(scriptId: string): Promise<void> {
-  await request(`/scripts/${scriptId}`, { method: 'DELETE' });
-}
-
-// ─── 角色 API ───
 
 export interface CharacterData {
   id: string;
@@ -97,6 +163,7 @@ export interface CharacterData {
   age: number;
   description: string;
   personality: string;
+  personality_traits: string[];
   appearance: string;
   costume: string;
   background: string;
@@ -104,11 +171,19 @@ export interface CharacterData {
   avatar_color: string;
   avatar_url: string;
   has_generated_image: boolean;
+  assets: CharacterAsset[];
+  relationships: CharacterRelationship[];
+  scenes: string[];
   created_at: string;
   updated_at: string;
 }
 
-export interface CharacterCreateRequest {
+export const getCharacters = (projectId?: string) => {
+  const qs = projectId ? `?project_id=${projectId}` : '';
+  return request<CharacterData[]>(`/characters${qs}`);
+};
+
+export const createCharacter = (data: {
   project_id?: string;
   name: string;
   role?: string;
@@ -116,54 +191,143 @@ export interface CharacterCreateRequest {
   age?: number;
   description?: string;
   personality?: string;
+  personality_traits?: string[];
   appearance?: string;
   costume?: string;
   background?: string;
   special_setting?: string;
   avatar_color?: string;
+  avatar_url?: string;
+  has_generated_image?: boolean;
+  assets?: CharacterAsset[];
+  relationships?: CharacterRelationship[];
+  scenes?: string[];
+}) => request<CharacterData>('/characters', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const getCharacter = (id: string) => request<CharacterData>(`/characters/${id}`);
+
+export const updateCharacter = (id: string, data: Partial<{
+  name: string;
+  role: string;
+  gender: string;
+  age: number;
+  description: string;
+  personality: string;
+  personality_traits: string[];
+  appearance: string;
+  costume: string;
+  background: string;
+  special_setting: string;
+  avatar_color: string;
+  avatar_url: string;
+  has_generated_image: boolean;
+  assets: CharacterAsset[];
+  relationships: CharacterRelationship[];
+  scenes: string[];
+}>) => request<CharacterData>(`/characters/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
+
+export const deleteCharacter = (id: string) => request<{ message: string }>(`/characters/${id}`, {
+  method: 'DELETE',
+});
+
+// ─── Storyboard API ───
+
+export interface ShotData {
+  id: string;
+  project_id: string;
+  shot_number: number;
+  shot_type: string;
+  duration: number;
+  status: string;
+  description: string;
+  camera_movement: string;
+  composition: string;
+  lighting: string;
+  character_action: string;
+  dialogue: string;
+  scene_ref: string;
+  characters: string[];
+  created_at: string;
+  updated_at: string;
 }
 
-/** 获取角色列表。 */
-export async function getCharacters(projectId?: string): Promise<CharacterData[]> {
-  const params = projectId ? `?project_id=${projectId}` : '';
-  return request<CharacterData[]>(`/characters${params}`);
-}
+export const getShots = (projectId?: string) => {
+  const qs = projectId ? `?project_id=${projectId}` : '';
+  return request<ShotData[]>(`/storyboards${qs}`);
+};
 
-/** 创建角色。 */
-export async function createCharacter(data: CharacterCreateRequest): Promise<CharacterData> {
-  return request<CharacterData>('/characters', {
+export const createShot = (data: {
+  project_id?: string;
+  shot_number?: number;
+  shot_type?: string;
+  duration?: number;
+  status?: string;
+  description?: string;
+  camera_movement?: string;
+  composition?: string;
+  lighting?: string;
+  character_action?: string;
+  dialogue?: string;
+  scene_ref?: string;
+  characters?: string[];
+}) => request<ShotData>('/storyboards', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const createShotsBatch = (shots: Parameters<typeof createShot>[0][]) =>
+  request<ShotData[]>('/storyboards/batch', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify(shots),
   });
-}
 
-/** 更新角色。 */
-export async function updateCharacter(id: string, data: CharacterCreateRequest): Promise<CharacterData> {
-  return request<CharacterData>(`/characters/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
+export const getShot = (id: string) => request<ShotData>(`/storyboards/${id}`);
 
-/** 删除角色。 */
-export async function deleteCharacter(id: string): Promise<void> {
-  await request(`/characters/${id}`, { method: 'DELETE' });
-}
+export const updateShot = (id: string, data: Partial<{
+  shot_number: number;
+  shot_type: string;
+  duration: number;
+  status: string;
+  description: string;
+  camera_movement: string;
+  composition: string;
+  lighting: string;
+  character_action: string;
+  dialogue: string;
+  scene_ref: string;
+  characters: string[];
+}>) => request<ShotData>(`/storyboards/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
 
-// ─── Pipeline 保存 API ───
+export const deleteShot = (id: string) => request<{ message: string }>(`/storyboards/${id}`, {
+  method: 'DELETE',
+});
 
-/** 保存 Pipeline 提取的剧本。 */
-export async function savePipelineScript(data: ScriptCreateRequest): Promise<ScriptData> {
-  return request<ScriptData>('/pipeline/save-script', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
+// ─── Pipeline API ───
 
-/** 保存 Pipeline 提取的角色。 */
-export async function savePipelineCharacters(projectId: string, characters: CharacterCreateRequest[]): Promise<CharacterData[]> {
-  return request<CharacterData[]>('/pipeline/save-characters', {
-    method: 'POST',
-    body: JSON.stringify({ project_id: projectId, characters }),
-  });
-}
+export const savePipelineScript = (data: {
+  project_id?: string;
+  title: string;
+  episodes: { number: number; title: string; scenes: { title: string; summary?: string; location?: string; time_tag?: string }[] }[];
+}) => request<ScriptData>('/pipeline/save-script', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const savePipelineCharacters = (project_id: string, characters: {
+  name: string;
+  role?: string;
+  description?: string;
+  avatar_color?: string;
+}[]) => request<CharacterData[]>('/pipeline/save-characters', {
+  method: 'POST',
+  body: JSON.stringify({ project_id, characters }),
+});

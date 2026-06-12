@@ -1,368 +1,164 @@
-"""
-数据库初始化脚本 — 删除旧表、创建新表、灌入 mock 数据。
-
-使用方式：
-    cd backend && python seed.py
-"""
+"""数据库初始化脚本 — 重建所有表并灌入 mock 数据。"""
 
 import asyncio
-import json
-import os
+import uuid
 
-from app.database import engine, Base, async_session
-from app.models.db_models import Project, Script, Episode, Scene, ScriptBlock, Character
-
-
-# ─── Mock 数据：项目 ───
-
-MOCK_PROJECTS = [
-    {
-        "id": "proj_sakura",
-        "name": "《樱花下的约定》第1季",
-        "type": "漫剧",
-        "status": "进行中",
-        "description": "青春校园漫剧，讲述转学生林晓在春野高中的成长故事",
-        "episodes": 8,
-        "skill_id": "jp-school",
-    },
-]
-
-
-# ─── Mock 数据：剧本（第一季完整 3 集） ───
-
-MOCK_SCRIPTS = [
-    {
-        "id": "scr_sakura",
-        "project_id": "proj_sakura",
-        "title": "《樱花下的约定》",
-        "episodes": [
-            {
-                "id": "ep1",
-                "number": 1,
-                "title": "初遇的樱花",
-                "scenes": [
-                    {"id": "s1", "number": 1, "title": "教室·日", "summary": "林晓转学来到春野高中二年三班，紧张地做自我介绍。阳光透过窗户洒在课桌上，粉笔灰在光束中轻轻飘舞。", "location": "教室", "time_tag": "日内"},
-                    {"id": "s2", "number": 2, "title": "走廊·日", "summary": "课后苏雨在走廊拦住林晓，傲慢地嘲讽她是从乡下转来的。林晓忍住委屈请求让路。", "location": "走廊", "time_tag": "日外"},
-                    {"id": "s3", "number": 3, "title": "樱花树下·傍晚", "summary": "林晓独自站在樱花树下，江辰走近与她交谈。樱花花瓣在夕阳映照下泛着金色光芒。", "location": "樱花树下", "time_tag": "傍晚外"},
-                    {"id": "s4", "number": 4, "title": "林晓家·夜", "summary": "林晓在卧室独白，感叹来到陌生城市的孤独。手机收到一条消息。", "location": "林晓家", "time_tag": "夜内"},
-                ],
-            },
-            {
-                "id": "ep2",
-                "number": 2,
-                "title": "暗涌的风暴",
-                "scenes": [
-                    {"id": "s5", "number": 1, "title": "教室·日", "summary": "陈老师宣布期中考试成绩，表扬林晓考了全班第五名。苏雨嫉妒地猛拍桌子。", "location": "教室", "time_tag": "日内"},
-                    {"id": "s6", "number": 2, "title": "天台·日", "summary": "苏雨在天台威胁林晓离江辰远一点。林晓虽然害怕但坚定地说自己没有做错任何事。", "location": "天台", "time_tag": "日外"},
-                    {"id": "s7", "number": 3, "title": "图书馆·午后", "summary": "江辰在图书馆鼓励林晓，说她比苏雨勇敢多了。两人相视而笑。", "location": "图书馆", "time_tag": "午后内"},
-                    {"id": "s8", "number": 4, "title": "走廊·黄昏", "summary": "苏雨与江辰在走廊对峙，江辰严厉地让苏雨反省自己的行为。远处传来雷鸣。", "location": "走廊", "time_tag": "黄昏内"},
-                ],
-            },
-            {
-                "id": "ep3",
-                "number": 3,
-                "title": "绽放的勇气",
-                "scenes": [
-                    {"id": "s9", "number": 1, "title": "教室·日", "summary": "苏雨在班会课上当众羞辱林晓，编造她转学的谣言。全班安静下来。", "location": "教室", "time_tag": "日内"},
-                    {"id": "s10", "number": 2, "title": "教室·日（连续）", "summary": "林晓勇敢反击，揭露苏雨是因为喜欢江辰才针对她。教室里响起雷鸣般的掌声。", "location": "教室", "time_tag": "日内"},
-                    {"id": "s11", "number": 3, "title": "操场·傍晚", "summary": "江辰在操场向林晓表白，夕阳下两人相拥。", "location": "操场", "time_tag": "傍晚外"},
-                    {"id": "s12", "number": 4, "title": "樱花大道·夜", "summary": "夜樱绽放，陈老师寄语同学们不要忘记此刻的勇气和真诚。烟花绽放。", "location": "樱花大道", "time_tag": "夜外"},
-                ],
-            },
-        ],
-    },
-]
-
-
-# ─── Mock 数据：剧本块（第一集完整内容） ───
-
-MOCK_BLOCKS = [
-    # 场景1：教室·日
-    {"id": "b1", "scene_id": "s1", "type": "scene", "content": "[场景：晨光高中二年三班教室·春日午后]", "sort_order": 1},
-    {"id": "b2", "scene_id": "s1", "type": "narration", "content": "阳光透过窗户洒在课桌上，粉笔灰在光束中轻轻飘舞。教室里的学生们三三两两聚在一起，笑声和聊天声交织成一片。", "sort_order": 2},
-    {"id": "b3", "scene_id": "s1", "type": "character", "content": "【角色：林晓】（情绪：紧张不安）", "sort_order": 3},
-    {"id": "b4", "scene_id": "s1", "type": "dialogue", "content": "大家好，我叫林晓，刚从梧桐市转来。希望……希望能和大家成为朋友。", "sort_order": 4},
-    {"id": "b5", "scene_id": "s1", "type": "narration", "content": "她的声音很轻，手指紧紧攥着书包带子，目光低垂，不敢与任何人对视。", "sort_order": 5},
-    {"id": "b6", "scene_id": "s1", "type": "sound", "content": "「音效：上课铃声响起，清脆悠扬」", "sort_order": 6},
-    # 场景2：走廊·日
-    {"id": "b7", "scene_id": None, "type": "transition", "content": "--- 转场 ---", "sort_order": 7},
-    {"id": "b8", "scene_id": "s2", "type": "scene", "content": "[场景：教学楼走廊·课后]", "sort_order": 8},
-    {"id": "b9", "scene_id": "s2", "type": "character", "content": "【角色：苏雨】（情绪：傲慢挑衅）", "sort_order": 9},
-    {"id": "b10", "scene_id": "s2", "type": "dialogue", "content": "哟，这不是新来的转学生吗？梧桐市来的？听说那边都是乡下地方呢。", "sort_order": 10},
-    {"id": "b11", "scene_id": "s2", "type": "action", "content": "<动作：苏雨双臂抱胸，挡在林晓面前，嘴角挂着轻蔑的笑容>", "sort_order": 11},
-    {"id": "b12", "scene_id": "s2", "type": "character", "content": "【角色：林晓】（情绪：隐忍委屈）", "sort_order": 12},
-    {"id": "b13", "scene_id": "s2", "type": "dialogue", "content": "对不起，请让一下，我要回教室……", "sort_order": 13},
-    # 场景3：樱花树下
-    {"id": "b14", "scene_id": None, "type": "transition", "content": "--- 转场 ---", "sort_order": 14},
-    {"id": "b15", "scene_id": "s3", "type": "scene", "content": "[场景：校园樱花树下·傍晚黄昏]", "sort_order": 15},
-    {"id": "b16", "scene_id": "s3", "type": "narration", "content": "粉色的樱花在夕阳映照下泛着金色的光芒，花瓣随着微风纷纷扬扬飘落。林晓独自站在树下，抬头望着满树繁花。", "sort_order": 16},
-    {"id": "b17", "scene_id": "s3", "type": "character", "content": "【角色：江辰】（情绪：温和友善）", "sort_order": 17},
-    {"id": "b18", "scene_id": "s3", "type": "dialogue", "content": "你喜欢樱花吗？每年这时候，我都会来这里。樱花开得最盛的时候，也就是最美的时刻，总是特别短暂。", "sort_order": 18},
-    # 场景4：林晓家
-    {"id": "b19", "scene_id": None, "type": "transition", "content": "--- 转场 ---", "sort_order": 19},
-    {"id": "b20", "scene_id": "s4", "type": "scene", "content": "[场景：林晓家卧室·夜晚]", "sort_order": 20},
-    {"id": "b21", "scene_id": "s4", "type": "character", "content": "【角色：林晓】（情绪：孤独迷茫）", "sort_order": 21},
-    {"id": "b22", "scene_id": "s4", "type": "dialogue", "content": "（独白）来到这个陌生的城市，陌生的学校……真的能找到属于自己的位置吗？那个班长，好像和那些人不太一样……", "sort_order": 22},
-    {"id": "b23", "scene_id": "s4", "type": "sound", "content": "「音效：手机消息提示音」", "sort_order": 23},
-]
-
-
-# ─── Mock 数据：角色（8 个完整角色） ───
-
-MOCK_CHARACTERS = [
-    {
-        "id": "char_lin_xiao",
-        "project_id": "proj_sakura",
-        "name": "林晓",
-        "role": "主角",
-        "gender": "女",
-        "age": 17,
-        "description": "转学生，拥有能看到别人记忆的特殊能力。性格内向敏感，但内心善良温柔。因过去的某次事件而封闭了自己的内心，直到遇见陈雨泽才逐渐打开心扉。",
-        "personality": "内向敏感，但内心善良温柔。不擅长与人建立深厚关系，但在关键时刻会展现出惊人的勇气。",
-        "personality_traits": json.dumps(["内向", "敏感", "善良", "温柔"]),
-        "appearance": "黑色及肩长发，刘海微微遮住左眼。眼睛是清澈的琥珀色。身材纤细，常微微低着头。校服穿得整整齐齐，但总是显得有些孤单。",
-        "costume": "春野高中女生校服（白色衬衫+藏青色百褶裙+红色领结）。私服以浅色系连衣裙为主，喜欢戴一条银色星星项链。",
-        "background": "因为父母工作调动频繁转学，导致不擅长与人建立深厚关系。小时候曾遭遇一次意外，从此获得了看到他人记忆的能力。",
-        "special_setting": "看到他人记忆的能力会在情绪激动时不受控制地触发。每次使用能力后会有短暂的头痛。",
-        "avatar_color": "#A8835F",
-        "avatar_url": "/character-placeholder.jpg",
-        "has_generated_image": 1,
-        "assets_json": json.dumps([
-            {"id": "a1", "type": "立绘", "name": "标准立绘", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a2", "type": "表情", "name": "微笑表情", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a3", "type": "表情", "name": "悲伤表情", "thumbnail": "/character-placeholder.jpg"},
-        ]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_chen_yuze", "targetName": "陈雨泽", "relation": "同桌/逐渐萌生的感情"},
-            {"targetCharacterId": "char_su_yao", "targetName": "苏瑶", "relation": "室友/朋友"},
-        ]),
-        "scenes_json": json.dumps(["教室初见", "天台对话", "樱花树下的约定"]),
-    },
-    {
-        "id": "char_chen_yuze",
-        "project_id": "proj_sakura",
-        "name": "陈雨泽",
-        "role": "主角",
-        "gender": "男",
-        "age": 17,
-        "description": "春野高中的校草，篮球队队长。外表阳光开朗，实则内心细腻。对林晓一见钟情，用耐心和温暖逐渐融化了她的心防。",
-        "personality": "阳光开朗，内心细腻。对林晓一见钟情，用耐心和温暖逐渐融化了她的心防。",
-        "personality_traits": json.dumps(["阳光", "开朗", "细腻", "勇敢"]),
-        "appearance": "高挑身材，约180cm。棕色短发，笑起来有好看的酒窝。眼睛是深邃的墨绿色。总是挺直腰板，给人可靠的感觉。",
-        "costume": "春野高中男生校服（白色衬衫+藏青色长裤+红色领带）。篮球队服是7号。私服以休闲运动风为主。",
-        "background": "家境优渥但父母忙于工作，从小独立自主。初中时是篮球队的核心球员，因膝盖受伤休养过一段时间。",
-        "special_setting": "对林晓的记忆能力隐约有所察觉，但选择尊重她的秘密。擅长烹饪，经常做便当给林晓。",
-        "avatar_color": "#5A7FA8",
-        "avatar_url": "/character-placeholder.jpg",
-        "has_generated_image": 1,
-        "assets_json": json.dumps([
-            {"id": "a4", "type": "立绘", "name": "标准立绘", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a5", "type": "表情", "name": "阳光笑容", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a6", "type": "动作", "name": "投篮姿势", "thumbnail": "/character-placeholder.jpg"},
-        ]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_lin_xiao", "targetName": "林晓", "relation": "同桌/深爱的人"},
-            {"targetCharacterId": "char_zhao_zixuan", "targetName": "赵子轩", "relation": "发小/篮球队友"},
-        ]),
-        "scenes_json": json.dumps(["教室初见", "篮球场比赛", "天台对话", "樱花树下的约定"]),
-    },
-    {
-        "id": "char_su_yao",
-        "project_id": "proj_sakura",
-        "name": "苏瑶",
-        "role": "配角",
-        "gender": "女",
-        "age": 17,
-        "description": "林晓的室友，活泼开朗的元气少女。是班级里的开心果，也是林晓在学校交到的第一个朋友。暗恋赵子轩却不敢表白。",
-        "personality": "活泼开朗，仗义迷糊。虽然看起来大大咧咧，其实很会察言观色。",
-        "personality_traits": json.dumps(["活泼", "开朗", "仗义", "迷糊"]),
-        "appearance": "齐肩卷发，染了淡淡的栗子色。眼睛大大的很有神。总是面带笑容，喜欢戴各种可爱的发饰。",
-        "costume": "春野高中女生校服（裙子总是比规定短一点点）。私服是日系原宿风，色彩鲜艳。",
-        "background": "家中有一个弟弟，从小学会了照顾人。梦想是成为一名婚礼策划师。",
-        "special_setting": "虽然看起来大大咧咧，其实很会察言观色。是林晓和陈雨泽的爱情助攻。",
-        "avatar_color": "#7A6B8A",
-        "avatar_url": "/character-placeholder.jpg",
-        "has_generated_image": 1,
-        "assets_json": json.dumps([
-            {"id": "a7", "type": "立绘", "name": "标准立绘", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a8", "type": "表情", "name": "元气笑容", "thumbnail": "/character-placeholder.jpg"},
-        ]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_lin_xiao", "targetName": "林晓", "relation": "室友/挚友"},
-            {"targetCharacterId": "char_zhao_zixuan", "targetName": "赵子轩", "relation": "暗恋对象"},
-        ]),
-        "scenes_json": json.dumps(["宿舍初见", "食堂吃饭", "助攻计划"]),
-    },
-    {
-        "id": "char_shen_wanqing",
-        "project_id": "proj_sakura",
-        "name": "沈婉清",
-        "role": "配角",
-        "gender": "女",
-        "age": 35,
-        "description": "春野高中的心理辅导老师，温柔知性。她是唯一知道林晓秘密的成年人，成为了林晓的精神支柱。",
-        "personality": "温柔知性，善解人意，坚韧。曾是临床心理学医生，后转行成为学校心理老师。",
-        "personality_traits": json.dumps(["温柔", "知性", "善解人意", "坚韧"]),
-        "appearance": "黑色长发挽成优雅的发髻。戴着细框眼镜，眼神温和。身材匀称，穿着得体的职业装。",
-        "costume": "米白色针织衫搭配深色长裙。办公室常备一条温暖的羊毛披肩。",
-        "background": "曾是临床心理学医生，后转行成为学校心理老师。有过一段失败的婚姻，但始终保持对生活的热爱。",
-        "special_setting": "办公室里永远有热茶和手工饼干。会弹奏古筝，有时会在放学后弹奏给学生听。",
-        "avatar_color": "#5B8C5A",
-        "avatar_url": "/character-placeholder.jpg",
-        "has_generated_image": 1,
-        "assets_json": json.dumps([
-            {"id": "a9", "type": "立绘", "name": "标准立绘", "thumbnail": "/character-placeholder.jpg"},
-        ]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_lin_xiao", "targetName": "林晓", "relation": "学生/被辅导者"},
-        ]),
-        "scenes_json": json.dumps(["心理咨询室", "古筝演奏"]),
-    },
-    {
-        "id": "char_zhao_zixuan",
-        "project_id": "proj_sakura",
-        "name": "赵子轩",
-        "role": "配角",
-        "gender": "男",
-        "age": 17,
-        "description": "陈雨泽的青梅竹马，篮球队的副队长。外表冷酷话少，实际上是个热心肠。对苏瑶有好感但不知道怎么表达。",
-        "personality": "冷酷话少，热心忠诚。父母离异，跟着奶奶长大。",
-        "personality_traits": json.dumps(["冷酷", "话少", "热心", "忠诚"]),
-        "appearance": "黑色短发，略带自然卷。单眼皮，眼神锐利。身高182cm，体型修长结实。左耳有一颗银色耳钉。",
-        "costume": "春野高中男生校服（衬衫总是少扣一颗扣子）。篮球队服是11号。私服以黑色系街头风为主。",
-        "background": "父母离异，跟着奶奶长大。篮球是他唯一的宣泄出口，通过篮球奖学金进入春野高中。",
-        "special_setting": "左耳的耳钉是奶奶送的护身符。擅长弹吉他，但只在最亲近的人面前演奏。",
-        "avatar_color": "#B85C50",
-        "avatar_url": "/character-placeholder.jpg",
-        "has_generated_image": 1,
-        "assets_json": json.dumps([
-            {"id": "a10", "type": "立绘", "name": "标准立绘", "thumbnail": "/character-placeholder.jpg"},
-            {"id": "a11", "type": "服装", "name": "篮球服", "thumbnail": "/character-placeholder.jpg"},
-        ]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_chen_yuze", "targetName": "陈雨泽", "relation": "发小/队友"},
-            {"targetCharacterId": "char_su_yao", "targetName": "苏瑶", "relation": "暗恋对象"},
-        ]),
-        "scenes_json": json.dumps(["篮球训练", "吉他独奏", "便利店偶遇"]),
-    },
-    {
-        "id": "char_wang_meiling",
-        "project_id": "proj_sakura",
-        "name": "王美玲",
-        "role": "龙套",
-        "gender": "女",
-        "age": 17,
-        "description": "班里的学习委员，有点八卦但本质不坏。经常传播校园里的各种消息。",
-        "personality": "八卦好胜，热心。消息灵通，班里大小事都知道。",
-        "personality_traits": json.dumps(["八卦", "好胜", "热心"]),
-        "appearance": "扎着双马尾，戴着圆框眼镜。总是背着书包里装满参考资料。",
-        "costume": "春野高中女生校服（总是佩戴学习委员袖章）。",
-        "background": "父母都是教师，从小在学业上被严格要求。",
-        "special_setting": "消息灵通，班里大小事都知道。",
-        "avatar_color": "#C49A3C",
-        "avatar_url": "",
-        "has_generated_image": 0,
-        "assets_json": json.dumps([]),
-        "relationships_json": json.dumps([]),
-        "scenes_json": json.dumps(["班级通知", "课间八卦"]),
-    },
-    {
-        "id": "char_zhang_xiaoming",
-        "project_id": "proj_sakura",
-        "name": "张小明",
-        "role": "龙套",
-        "gender": "男",
-        "age": 17,
-        "description": "班里的搞笑担当，经常逗大家开心。陈雨泽的篮球队队友。",
-        "personality": "搞笑乐观，贪吃。书包里永远有零食，人称移动小卖部。",
-        "personality_traits": json.dumps(["搞笑", "乐观", "贪吃"]),
-        "appearance": "微胖身材，圆圆的脸，总是笑眯眯的。头发有点自然卷。",
-        "costume": "春野高中男生校服（领带总是歪的）。",
-        "background": "家里开小吃店，从小对美食有研究。",
-        "special_setting": "书包里永远有零食，人称移动小卖部。",
-        "avatar_color": "#6E8B74",
-        "avatar_url": "",
-        "has_generated_image": 0,
-        "assets_json": json.dumps([]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_chen_yuze", "targetName": "陈雨泽", "relation": "队友"},
-        ]),
-        "scenes_json": json.dumps(["课间搞笑", "篮球比赛"]),
-    },
-    {
-        "id": "char_lin_mother",
-        "project_id": "proj_sakura",
-        "name": "林母",
-        "role": "龙套",
-        "gender": "女",
-        "age": 42,
-        "description": "林晓的母亲，温柔但有些疏忽。因工作忙碌而缺少对女儿的陪伴。",
-        "personality": "温柔忙碌，内疚。公司中层管理人员，常年出差。",
-        "personality_traits": json.dumps(["温柔", "忙碌", "内疚"]),
-        "appearance": "和林晓相似的黑色长发，眼角有细纹。穿着朴素的职业装。",
-        "costume": "素色职业套装，偶尔系一条林晓送的丝巾。",
-        "background": "公司中层管理人员，常年出差。",
-        "special_setting": "手机里存满了林晓的照片，却很少有机会一起看。",
-        "avatar_color": "#8B6B8A",
-        "avatar_url": "",
-        "has_generated_image": 0,
-        "assets_json": json.dumps([]),
-        "relationships_json": json.dumps([
-            {"targetCharacterId": "char_lin_xiao", "targetName": "林晓", "relation": "母女"},
-        ]),
-        "scenes_json": json.dumps(["家中对话", "机场送别"]),
-    },
-]
+from sqlalchemy import text
+from app.database import engine, async_session, Base
+from app.models.db_models import (
+    Project, Script, Episode, Scene, ScriptBlock, Character, StoryboardShot
+)
 
 
 async def seed():
-    """删除旧表、创建新表、灌入 mock 数据。"""
-
-    # 1. 删除所有表（如果存在），然后重新创建
+    """重建所有表并灌入 mock 数据。"""
     async with engine.begin() as conn:
+        # 删除所有表
         await conn.run_sync(Base.metadata.drop_all)
+        # 重建所有表
         await conn.run_sync(Base.metadata.create_all)
-    print("[SEED] 已重建所有表：projects, scripts, episodes, scenes, script_blocks, characters")
 
-    # 3. 灌入数据
-    async with async_session() as session:
-        # 项目
-        for data in MOCK_PROJECTS:
-            session.add(Project(**data))
-        print(f"[SEED] 已插入 {len(MOCK_PROJECTS)} 个项目")
+    print("表结构已重建")
 
-        # 剧本 + 分集 + 场景
-        for script_data in MOCK_SCRIPTS:
-            script_id = script_data["id"]
-            episodes_data = script_data.pop("episodes")
-            session.add(Script(**script_data))
-            for ep_data in episodes_data:
-                ep_id = ep_data["id"]
-                scenes_data = ep_data.pop("scenes")
-                session.add(Episode(id=ep_id, script_id=script_id, number=ep_data["number"], title=ep_data["title"]))
-                for scene_data in scenes_data:
-                    session.add(Scene(id=scene_data["id"], episode_id=ep_id, number=scene_data["number"], title=scene_data["title"], summary=scene_data.get("summary", ""), location=scene_data.get("location", "未指定"), time_tag=scene_data.get("time_tag", "日间")))
-        print(f"[SEED] 已插入 {len(MOCK_SCRIPTS)} 个剧本（含分集和场景）")
+    async with async_session() as db:
+        # ─── 1. 项目 ───
+        project = Project(
+            id="proj_sakura_001",
+            name="《樱花下的约定》第1季",
+            type="漫剧",
+            status="进行中",
+            description="日式校园悬疑漫剧，讲述能看到别人记忆的转学生的故事",
+            episodes=8,
+            current_episode=3,
+            progress=35,
+            skill_id="jp-school",
+            skill_name="日式校园漫剧SKILL",
+        )
+        db.add(project)
 
-        # 剧本块
-        for block_data in MOCK_BLOCKS:
-            session.add(ScriptBlock(
-                id=block_data["id"],
-                scene_id=block_data.get("scene_id"),
-                type=block_data["type"],
-                content=block_data["content"],
-                sort_order=block_data["sort_order"],
+        # ─── 2. 剧本 ───
+        script = Script(id="scr_sakura_001", project_id="proj_sakura_001", title="《樱花下的约定》")
+        db.add(script)
+
+        # ─── 3. 分集 ───
+        episodes_data = [
+            {"number": 1, "title": "转学生的有色眼镜"},
+            {"number": 2, "title": "暗涌的风暴"},
+            {"number": 3, "title": "绽放的勇气"},
+        ]
+        ep_ids = []
+        for ep in episodes_data:
+            ep_id = f"ep_{uuid.uuid4().hex[:12]}"
+            db.add(Episode(id=ep_id, script_id="scr_sakura_001", number=ep["number"], title=ep["title"]))
+            ep_ids.append(ep_id)
+
+        # ─── 4. 场景 + 剧本块 ───
+        scenes_data = [
+            # 第1集场景
+            {"ep_idx": 0, "number": 1, "title": "樱花树下的初遇", "location": "学校樱花道", "time_tag": "清晨",
+             "blocks": [
+                 {"type": "scene", "content": "清晨的学校樱花道，花瓣随风飘落"},
+                 {"type": "character", "content": "林晓（主角）"},
+                 {"type": "dialogue", "content": "林晓：这里就是新学校吗..."},
+             ]},
+            {"ep_idx": 0, "number": 2, "title": "教室里的目光", "location": "教室", "time_tag": "上午",
+             "blocks": [
+                 {"type": "scene", "content": "教室里，同学们窃窃私语"},
+                 {"type": "dialogue", "content": "陈雨泽：你就是那个转学生？"},
+             ]},
+            {"ep_idx": 0, "number": 3, "title": "神秘的能力", "location": "保健室", "time_tag": "午后",
+             "blocks": [
+                 {"type": "scene", "content": "保健室，林晓发现自己能看到别人的记忆"},
+                 {"type": "narration", "content": "那一刻，林晓的世界彻底改变了"},
+             ]},
+            {"ep_idx": 0, "number": 4, "title": "选择的代价", "location": "天台", "time_tag": "傍晚",
+             "blocks": [
+                 {"type": "scene", "content": "夕阳下的天台"},
+                 {"type": "dialogue", "content": "林晓：我必须做出选择..."},
+             ]},
+            # 第2集场景
+            {"ep_idx": 1, "number": 1, "title": "记忆碎片", "location": "图书馆", "time_tag": "午后",
+             "blocks": [
+                 {"type": "scene", "content": "图书馆深处，尘封的记忆"},
+             ]},
+            {"ep_idx": 1, "number": 2, "title": "信任危机", "location": "教室", "time_tag": "上午",
+             "blocks": [
+                 {"type": "scene", "content": "同学们开始疏远林晓"},
+             ]},
+            # 第3集场景
+            {"ep_idx": 2, "number": 1, "title": "真相大白", "location": "校长室", "time_tag": "上午",
+             "blocks": [
+                 {"type": "scene", "content": "校长室里，真相浮出水面"},
+             ]},
+        ]
+
+        for sc in scenes_data:
+            scene_id = f"sc_{uuid.uuid4().hex[:12]}"
+            db.add(Scene(
+                id=scene_id, episode_id=ep_ids[sc["ep_idx"]],
+                number=sc["number"], title=sc["title"],
+                location=sc["location"], time_tag=sc["time_tag"],
             ))
-        print(f"[SEED] 已插入 {len(MOCK_BLOCKS)} 个剧本块")
+            for idx, blk in enumerate(sc.get("blocks", [])):
+                db.add(ScriptBlock(
+                    id=f"blk_{uuid.uuid4().hex[:12]}",
+                    scene_id=scene_id, type=blk["type"],
+                    content=blk["content"], sort_order=idx,
+                ))
 
-        # 角色
-        for char_data in MOCK_CHARACTERS:
-            session.add(Character(**char_data))
-        print(f"[SEED] 已插入 {len(MOCK_CHARACTERS)} 个角色")
+        # ─── 5. 角色 ───
+        characters_data = [
+            {"name": "林晓", "role": "主角", "gender": "女", "age": 17, "description": "能看到别人记忆的转学生", "personality": "温柔坚强", "personality_traits": ["温柔", "坚强", "内向"], "appearance": "黑色长发，戴眼镜", "costume": "校服", "background": "从东京转学而来", "special_setting": "能通过触碰看到他人记忆", "avatar_color": "#A8835F"},
+            {"name": "陈雨泽", "role": "主角", "gender": "男", "age": 18, "description": "学校风云人物，篮球社主将", "personality": "外冷内热", "personality_traits": ["外冷内热", "正义", "倔强"], "appearance": "短发，高个子", "costume": "校服+篮球服", "background": "校篮球队队长", "special_setting": "", "avatar_color": "#5A7FA8"},
+            {"name": "苏瑶", "role": "配角", "gender": "女", "age": 17, "description": "林晓的同桌，活泼开朗", "personality": "活泼开朗", "personality_traits": ["活泼", "开朗", "话多"], "appearance": "双马尾", "costume": "校服", "background": "本地学生", "special_setting": "", "avatar_color": "#7A6B8A"},
+            {"name": "沈婉清", "role": "配角", "gender": "女", "age": 17, "description": "文艺委员，安静内敛", "personality": "安静内敛", "personality_traits": ["安静", "细腻", "文艺"], "appearance": "长发披肩", "costume": "校服", "background": "文学世家", "special_setting": "", "avatar_color": "#5B8C5A"},
+            {"name": "赵子轩", "role": "配角", "gender": "男", "age": 18, "description": "学生会主席", "personality": "严谨认真", "personality_traits": ["严谨", "认真", "责任感强"], "appearance": "戴眼镜", "costume": "校服", "background": "学霸", "special_setting": "", "avatar_color": "#B85C50"},
+            {"name": "王美玲", "role": "配角", "gender": "女", "age": 45, "description": "班主任", "personality": "严厉但关心学生", "personality_traits": ["严厉", "负责"], "appearance": "短发", "costume": "职业装", "background": "资深教师", "special_setting": "", "avatar_color": "#C49A3C"},
+            {"name": "张小明", "role": "龙套", "gender": "男", "age": 17, "description": "班上的搞笑担当", "personality": "幽默搞笑", "personality_traits": ["幽默", "搞笑"], "appearance": "圆脸", "costume": "校服", "background": "", "special_setting": "", "avatar_color": "#6E8B74"},
+            {"name": "林母", "role": "龙套", "gender": "女", "age": 42, "description": "林晓的母亲", "personality": "温柔体贴", "personality_traits": ["温柔", "体贴"], "appearance": "优雅", "costume": "便装", "background": "单亲妈妈", "special_setting": "", "avatar_color": "#8B6B8A"},
+        ]
 
-        await session.commit()
+        for char in characters_data:
+            db.add(Character(
+                id=f"char_{uuid.uuid4().hex[:12]}",
+                project_id="proj_sakura_001",
+                name=char["name"], role=char["role"], gender=char["gender"],
+                age=char["age"], description=char["description"],
+                personality=char["personality"], personality_traits=char["personality_traits"],
+                appearance=char["appearance"], costume=char["costume"],
+                background=char["background"], special_setting=char["special_setting"],
+                avatar_color=char["avatar_color"],
+            ))
 
-    print("\n[SEED] 数据库初始化完成！")
+        # ─── 6. 分镜 ───
+        shots_data = [
+            {"shot_number": 1, "shot_type": "远景", "duration": 5, "description": "樱花道全景，花瓣飘落", "camera_movement": "缓慢推进", "scene_ref": "樱花树下的初遇", "characters": ["林晓"]},
+            {"shot_number": 2, "shot_type": "中景", "duration": 4, "description": "林晓站在樱花树下", "camera_movement": "固定", "scene_ref": "樱花树下的初遇", "characters": ["林晓"]},
+            {"shot_number": 3, "shot_type": "近景", "duration": 3, "description": "林晓的表情特写", "camera_movement": "缓慢推进", "scene_ref": "樱花树下的初遇", "characters": ["林晓"]},
+            {"shot_number": 4, "shot_type": "全景", "duration": 4, "description": "教室内景", "camera_movement": "固定", "scene_ref": "教室里的目光", "characters": ["林晓", "陈雨泽"]},
+            {"shot_number": 5, "shot_type": "中景", "duration": 5, "description": "陈雨泽走向林晓", "camera_movement": "跟拍", "scene_ref": "教室里的目光", "characters": ["陈雨泽"]},
+            {"shot_number": 6, "shot_type": "特写", "duration": 3, "description": "两人对视", "camera_movement": "固定", "scene_ref": "教室里的目光", "characters": ["林晓", "陈雨泽"]},
+        ]
+
+        for shot in shots_data:
+            db.add(StoryboardShot(
+                id=f"shot_{uuid.uuid4().hex[:12]}",
+                project_id="proj_sakura_001",
+                shot_number=shot["shot_number"], shot_type=shot["shot_type"],
+                duration=shot["duration"], status="已完成",
+                description=shot["description"], camera_movement=shot["camera_movement"],
+                scene_ref=shot["scene_ref"], characters=shot["characters"],
+            ))
+
+        await db.commit()
+        print("Mock 数据已灌入:")
+        print(f"  项目: 1 个")
+        print(f"  剧本: 1 个")
+        print(f"  分集: {len(episodes_data)} 集")
+        print(f"  场景: {len(scenes_data)} 个")
+        print(f"  剧本块: {sum(len(s.get('blocks', [])) for s in scenes_data)} 个")
+        print(f"  角色: {len(characters_data)} 个")
+        print(f"  分镜: {len(shots_data)} 个")
 
 
 if __name__ == "__main__":
