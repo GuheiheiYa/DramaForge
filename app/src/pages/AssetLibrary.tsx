@@ -369,7 +369,6 @@ export default function AssetLibrary() {
             <span className="ml-3 text-[#A8A39E]">加载中...</span>
           </div>
         ) : (
-          /* Asset Grid/List */
           <AnimatePresence mode="wait">
             {filteredAssets.length > 0 ? (
             <motion.div key={`${viewMode}-${filterType}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -476,6 +475,7 @@ export default function AssetLibrary() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </div>
 
       {/* Preview Modal */}

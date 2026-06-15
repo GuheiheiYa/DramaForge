@@ -273,7 +273,6 @@ export default function CostStatistics() {
             </div>
           </motion.div>
         </div>
-      </>
       </div>
     </>
   );
