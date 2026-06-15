@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast, MSG } from '@/hooks/useToast';
+import { chatStream } from '@/lib/api';
 import type { ScriptBlock, ScriptBlockType } from './types';
 
 interface Message {
@@ -192,7 +193,7 @@ export default function AIScriptPanel({
     };
   }, []);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!input.trim()) return;
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -200,18 +201,49 @@ export default function AIScriptPanel({
       content: input,
     };
     setMessages((prev) => [...prev, userMsg]);
+    const userInput = input;
     setInput('');
     setIsGenerating(true);
 
-    setTimeout(() => {
-      const aiMsg = generateAIResponse(input);
-      setMessages((prev) => [...prev, aiMsg]);
-      setIsGenerating(false);
-      // Generated blocks tracked
-    }, 1500);
-  }, [input, generateAIResponse]);
+    // 构建上下文提示
+    const contextPrompt = blocks.length > 0
+      ? `当前剧本内容：\n${blocks.map(b => `[${b.type}] ${b.content}`).join('\n')}\n\n用户请求：${userInput}`
+      : userInput;
 
-  const handleQuickAction = useCallback((label: string) => {
+    try {
+      let aiContent = '';
+      const aiMsgId = (Date.now() + 1).toString();
+      // 先插入空消息
+      setMessages((prev) => [...prev, { id: aiMsgId, role: 'ai', content: '' }]);
+
+      await chatStream(
+        [{ role: 'user', content: `你是一个专业的剧本编辑助手。请用剧本格式回复，使用【角色：】标注角色，<动作：>标注动作，「音效：」标注音效。\n\n${contextPrompt}` }],
+        (chunk) => {
+          if (chunk.type === 'content') {
+            aiContent += chunk.data;
+            setMessages((prev) =>
+              prev.map((m) => m.id === aiMsgId ? { ...m, content: aiContent } : m)
+            );
+          }
+        },
+        'mimo'
+      );
+
+      if (!aiContent) {
+        // fallback 到 mock
+        const mockMsg = generateAIResponse(userInput);
+        setMessages((prev) => prev.map((m) => m.id === aiMsgId ? mockMsg : m));
+      }
+    } catch {
+      // fallback 到 mock
+      const mockMsg = generateAIResponse(userInput);
+      setMessages((prev) => [...prev.slice(0, -1), mockMsg]);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [input, generateAIResponse, blocks]);
+
+  const handleQuickAction = useCallback(async (label: string) => {
     if (label === '改写') {
       setShowRewriteMenu(!showRewriteMenu);
       return;
@@ -227,13 +259,39 @@ export default function AIScriptPanel({
     setMessages((prev) => [...prev, actionMsg]);
     setIsGenerating(true);
 
-    setTimeout(() => {
-      const aiMsg = generateAIResponse('', label);
-      setMessages((prev) => [...prev, aiMsg]);
+    const contextInfo = blocks.length > 0
+      ? `当前剧本：\n${blocks.map(b => `[${b.type}] ${b.content}`).join('\n')}\n\n`
+      : '';
+
+    try {
+      let aiContent = '';
+      const aiMsgId = (Date.now() + 1).toString();
+      setMessages((prev) => [...prev, { id: aiMsgId, role: 'ai', content: '' }]);
+
+      await chatStream(
+        [{ role: 'user', content: `你是一个专业的剧本编辑助手。${contextInfo}请执行「${label}」操作，用剧本格式回复。` }],
+        (chunk) => {
+          if (chunk.type === 'content') {
+            aiContent += chunk.data;
+            setMessages((prev) =>
+              prev.map((m) => m.id === aiMsgId ? { ...m, content: aiContent } : m)
+            );
+          }
+        },
+        'mimo'
+      );
+
+      if (!aiContent) {
+        const mockMsg = generateAIResponse('', label);
+        setMessages((prev) => prev.map((m) => m.id === aiMsgId ? mockMsg : m));
+      }
+    } catch {
+      const mockMsg = generateAIResponse('', label);
+      setMessages((prev) => [...prev.slice(0, -1), mockMsg]);
+    } finally {
       setIsGenerating(false);
-      // Generated blocks tracked
-    }, 1200);
-  }, [onAIAction, generateAIResponse, showRewriteMenu]);
+    }
+  }, [onAIAction, generateAIResponse, showRewriteMenu, blocks]);
 
   const handleRewriteSubAction = useCallback((subLabel: string) => {
     setShowRewriteMenu(false);

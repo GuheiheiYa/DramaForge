@@ -16,6 +16,7 @@ import {
   createShot as apiCreateShot,
   updateShot as apiUpdateShot,
   deleteShot as apiDeleteShot,
+  chatStream,
   type ShotData,
 } from '@/lib/api';
 
@@ -230,6 +231,71 @@ export default function StoryboardWorkbench() {
       });
   }, [shots.length, selectedProjectId]);
 
+  const [aiGenerating, setAiGenerating] = useState(false);
+
+  const handleAIGenerateShot = useCallback(async () => {
+    setAiGenerating(true);
+    try {
+      let aiContent = '';
+      await chatStream(
+        [{ role: 'user', content: '你是一个专业的分镜师。请生成一组分镜（5-8个镜头），用以下JSON数组格式回复（只回复JSON）：\n[{"shot_number":1,"shot_type":"全景/中景/近景/特写","duration":5,"description":"镜头描述","camera_movement":"固定/推/拉/摇/移","composition":"中心构图/三分法/对称构图","lighting":"自然光/逆光/侧光","character_action":"角色动作","dialogue":"台词","characters":["角色名"]}]' }],
+        (chunk) => {
+          if (chunk.type === 'content') aiContent += chunk.data;
+        },
+        'mimo'
+      );
+
+      const jsonMatch = aiContent.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        for (const item of data) {
+          const newShotData = {
+            project_id: selectedProjectId || 'default',
+            shot_number: shots.length + 1,
+            shot_type: item.shot_type || '中景',
+            duration: item.duration || 5,
+            status: '草稿',
+            description: item.description || '',
+            camera_movement: item.camera_movement || '固定',
+            composition: item.composition || '中心构图',
+            lighting: item.lighting || '自然光',
+            character_action: item.character_action || '',
+            dialogue: item.dialogue || '',
+            scene_ref: '',
+            characters: item.characters || [],
+          };
+          try {
+            const saved = await apiCreateShot(newShotData);
+            setShots((prev) => [...prev, toFrontendShot(saved)]);
+          } catch {
+            // 乐观添加
+            setShots((prev) => [...prev, {
+              id: `ai_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              shotNumber: prev.length + 1,
+              shotType: item.shot_type || '中景',
+              duration: item.duration || 5,
+              status: '草稿',
+              description: item.description || '',
+              cameraMovement: item.camera_movement || '固定',
+              composition: item.composition || '中心构图',
+              lighting: item.lighting || '自然光',
+              characterAction: item.character_action || '',
+              dialogue: item.dialogue || '',
+              sceneRef: '',
+              characters: item.characters || [],
+            }]);
+          }
+        }
+        toastSuccess(`AI 已生成 ${data.length} 个分镜`);
+      }
+    } catch (err) {
+      console.error('[StoryboardWorkbench] AI 生成失败:', err);
+      toastInfo('AI 生成失败，请重试');
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [selectedProjectId, shots.length]);
+
   const handleBatchGenerate = useCallback((ids: string[]) => {
     setGenerating(true);
     setGenerationProgress(0);
@@ -324,6 +390,14 @@ export default function StoryboardWorkbench() {
 
           {/* Right: header actions */}
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleAIGenerateShot}
+              disabled={aiGenerating}
+              className="h-7 px-3 bg-[#A8835F] hover:bg-[#8E6A48] rounded-lg text-white text-[12px] flex items-center gap-1.5 transition-colors disabled:opacity-60"
+            >
+              {aiGenerating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              AI 生成分镜
+            </button>
             <button
               onClick={() => toastSuccess('开始播放分镜预览...')}
               className="h-7 px-3 border border-[#DEDBD8] hover:border-[#A8835F] rounded-lg text-[#524D48] hover:text-[#755235] text-[12px] flex items-center gap-1.5 transition-colors"

@@ -123,9 +123,9 @@
 
 | ID | 需求描述 | 优先级 | 状态 | 依赖 |
 |----|---------|--------|------|------|
-| R-041 | ScriptEditor AI 面板接入真实 AI 生成 | P0 | ⏳ | R-035 |
-| R-042 | CharacterManager 添加「AI 生成角色」按钮 | P0 | ⏳ | R-034 |
-| R-043 | StoryboardWorkbench 添加「AI 生成分镜」按钮 | P0 | ⏳ | R-036 |
+| R-041 | ScriptEditor AI 面板接入真实 AI 生成 | P0 | ✅ | R-035 |
+| R-042 | CharacterManager 添加「AI 生成角色」按钮 | P0 | ✅ | R-034 |
+| R-043 | StoryboardWorkbench 添加「AI 生成分镜」按钮 | P0 | ✅ | R-036 |
 
 ### 阶段4：外部 API [R-044 ~ R-046]
 

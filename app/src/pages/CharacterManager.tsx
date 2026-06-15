@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from 'sonner';
+import { Loader2, Sparkles } from 'lucide-react';
 import CharacterGrid from './character/CharacterGrid';
 import CharacterForm from './character/CharacterForm';
 import CharacterDetailDrawer from './character/CharacterDetailDrawer';
@@ -13,6 +14,7 @@ import {
   createCharacter as apiCreateCharacter,
   updateCharacter as apiUpdateCharacter,
   deleteCharacter as apiDeleteCharacter,
+  chatStream,
   type CharacterData,
 } from '@/lib/api';
 
@@ -101,6 +103,56 @@ export default function CharacterManager() {
     setEditingCharacter(null);
     setIsFormOpen(true);
   }, []);
+
+  const [aiGenerating, setAiGenerating] = useState(false);
+
+  const handleAIGenerate = useCallback(async () => {
+    setAiGenerating(true);
+    try {
+      let aiContent = '';
+      await chatStream(
+        [{ role: 'user', content: '你是一个专业的角色设计师。请生成一个有趣的角色，用以下JSON格式回复（只回复JSON，不要其他内容）：\n{"name":"姓名","role":"主角/配角/龙套","gender":"男/女","age":18,"description":"简短描述","personalityTraits":["特征1","特征2"],"appearance":"外貌描述","costume":"服装描述","background":"背景故事"}' }],
+        (chunk) => {
+          if (chunk.type === 'content') aiContent += chunk.data;
+        },
+        'mimo'
+      );
+
+      // 尝试解析 JSON
+      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        const newChar: Character = {
+          id: `ai_${Date.now()}`,
+          name: data.name || 'AI角色',
+          role: data.role || '配角',
+          gender: data.gender || '男',
+          age: data.age || 18,
+          description: data.description || '',
+          personalityTraits: data.personalityTraits || [],
+          appearance: data.appearance || '',
+          costume: data.costume || '',
+          background: data.background || '',
+          specialSetting: '',
+          assets: [],
+          hasGeneratedImage: false,
+          relationships: [],
+          scenes: [],
+          createdAt: new Date().toISOString().slice(0, 10),
+          updatedAt: new Date().toISOString().slice(0, 10),
+        };
+        // 保存到后端
+        const saved = await apiCreateCharacter(toApiChar(newChar, selectedProjectId || 'default'));
+        setCharacters((prev) => [toFrontendChar(saved), ...prev]);
+        success('AI 角色已生成并保存');
+      }
+    } catch (err) {
+      console.error('[CharacterManager] AI 生成失败:', err);
+      info('AI 生成失败，请重试');
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [selectedProjectId, success, info]);
 
   const handleEdit = useCallback((character: Character) => {
     setEditingCharacter(character);
@@ -229,6 +281,32 @@ export default function CharacterManager() {
               <div className="text-[13px] text-[#8B847E] mt-0.5">{stat.label}</div>
             </motion.div>
           ))}
+        </motion.div>
+
+        {/* AI Generate Button */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.35 }}
+          className="mt-4"
+        >
+          <button
+            onClick={handleAIGenerate}
+            disabled={aiGenerating}
+            className="h-10 px-5 rounded-lg bg-[#A8835F] text-white text-small font-medium hover:bg-[#8E6A48] transition-colors flex items-center gap-2 disabled:opacity-60"
+          >
+            {aiGenerating ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                AI 生成中...
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                AI 生成角色
+              </>
+            )}
+          </button>
         </motion.div>
 
         {/* Character Grid with Filters */}
