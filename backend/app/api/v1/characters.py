@@ -62,7 +62,7 @@ async def list_characters(
 async def create_character(req: CharacterCreate, db: AsyncSession = Depends(get_db)):
     """创建角色。"""
     char = Character(
-        id=f"char_{uuid.uuid4().hex[:12]}",
+        id=str(uuid.uuid4()),
         project_id=req.project_id,
         name=req.name,
         role=req.role,

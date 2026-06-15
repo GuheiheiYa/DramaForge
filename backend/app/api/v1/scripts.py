@@ -65,7 +65,7 @@ async def list_scripts(
 async def create_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
     """创建剧本（含分集、场景、剧本块）。"""
     script = Script(
-        id=f"scr_{uuid.uuid4().hex[:12]}",
+        id=str(uuid.uuid4()),
         project_id=req.project_id,
         title=req.title,
     )
@@ -73,7 +73,7 @@ async def create_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
     for ep_data in req.episodes:
         episode = Episode(
-            id=f"ep_{uuid.uuid4().hex[:12]}",
+            id=str(uuid.uuid4()),
             script_id=script.id,
             number=ep_data.number,
             title=ep_data.title,
@@ -82,7 +82,7 @@ async def create_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
         for scene_data in ep_data.scenes:
             scene = Scene(
-                id=f"sc_{uuid.uuid4().hex[:12]}",
+                id=str(uuid.uuid4()),
                 episode_id=episode.id,
                 number=scene_data.number,
                 title=scene_data.title,
@@ -94,7 +94,7 @@ async def create_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
             for idx, block_data in enumerate(scene_data.blocks):
                 block = ScriptBlock(
-                    id=f"blk_{uuid.uuid4().hex[:12]}",
+                    id=str(uuid.uuid4()),
                     scene_id=scene.id,
                     type=block_data.type,
                     content=block_data.content,
@@ -130,7 +130,7 @@ async def update_script(script_id: str, req: ScriptCreate, db: AsyncSession = De
     # 重建分集、场景、块
     for ep_data in req.episodes:
         episode = Episode(
-            id=f"ep_{uuid.uuid4().hex[:12]}",
+            id=str(uuid.uuid4()),
             script_id=script.id,
             number=ep_data.number,
             title=ep_data.title,
@@ -139,7 +139,7 @@ async def update_script(script_id: str, req: ScriptCreate, db: AsyncSession = De
 
         for scene_data in ep_data.scenes:
             scene = Scene(
-                id=f"sc_{uuid.uuid4().hex[:12]}",
+                id=str(uuid.uuid4()),
                 episode_id=episode.id,
                 number=scene_data.number,
                 title=scene_data.title,
@@ -151,7 +151,7 @@ async def update_script(script_id: str, req: ScriptCreate, db: AsyncSession = De
 
             for idx, block_data in enumerate(scene_data.blocks):
                 block = ScriptBlock(
-                    id=f"blk_{uuid.uuid4().hex[:12]}",
+                    id=str(uuid.uuid4()),
                     scene_id=scene.id,
                     type=block_data.type,
                     content=block_data.content,

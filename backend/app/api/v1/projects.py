@@ -55,7 +55,7 @@ async def list_projects(
 async def create_project(req: ProjectCreate, db: AsyncSession = Depends(get_db)):
     """创建新项目。"""
     project = Project(
-        id=f"proj_{uuid.uuid4().hex[:12]}",
+        id=str(uuid.uuid4()),
         name=req.name,
         type=req.type,
         status="草稿",

@@ -56,7 +56,7 @@ async def list_shots(
 async def create_shot(req: ShotCreate, db: AsyncSession = Depends(get_db)):
     """创建分镜。"""
     shot = StoryboardShot(
-        id=f"shot_{uuid.uuid4().hex[:12]}",
+        id=str(uuid.uuid4()),
         project_id=req.project_id,
         shot_number=req.shot_number,
         shot_type=req.shot_type,
@@ -82,7 +82,7 @@ async def create_shots_batch(req: list[ShotCreate], db: AsyncSession = Depends(g
     shots = []
     for item in req:
         shot = StoryboardShot(
-            id=f"shot_{uuid.uuid4().hex[:12]}",
+            id=str(uuid.uuid4()),
             project_id=item.project_id,
             shot_number=item.shot_number,
             shot_type=item.shot_type,

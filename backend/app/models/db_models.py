@@ -12,15 +12,15 @@ from app.database import Base
 
 
 def gen_uuid(prefix: str = "") -> str:
-    """生成 UUID 格式 ID，可选前缀。"""
-    return f"{prefix}{uuid.uuid4().hex[:12]}"
+    """生成完整 UUID 格式 ID，可选前缀。"""
+    return f"{prefix}{uuid.uuid4()}"
 
 
 class Project(Base):
     """项目表 — 一个项目包含剧本、角色、分镜等所有数据。"""
     __tablename__ = "projects"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("proj_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     name = Column(String(200), nullable=False, comment="项目名称")
     type = Column(String(20), default="漫剧", comment="项目类型: 漫剧/短剧")
     status = Column(String(20), default="草稿", comment="状态: 草稿/进行中/生成中/待审核/已完成/失败")
@@ -43,7 +43,7 @@ class Script(Base):
     """剧本表 — 一个项目对应一个剧本。"""
     __tablename__ = "scripts"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("scr_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(200), nullable=False, comment="剧本标题")
     created_at = Column(DateTime, default=datetime.now)
@@ -57,7 +57,7 @@ class Episode(Base):
     """分集表 — 一个剧本包含多集。"""
     __tablename__ = "episodes"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("ep_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     script_id = Column(String(32), ForeignKey("scripts.id", ondelete="CASCADE"), nullable=False)
     number = Column(Integer, nullable=False, comment="集数编号")
     title = Column(String(200), nullable=False, comment="集标题")
@@ -70,7 +70,7 @@ class Scene(Base):
     """场景表 — 一集包含多个场景。"""
     __tablename__ = "scenes"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("sc_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     episode_id = Column(String(32), ForeignKey("episodes.id", ondelete="CASCADE"), nullable=False)
     number = Column(Integer, nullable=False, comment="场景序号")
     title = Column(String(200), nullable=False, comment="场景标题")
@@ -86,7 +86,7 @@ class ScriptBlock(Base):
     """剧本块表 — 编辑器中的内容块（对话/动作/旁白等）。"""
     __tablename__ = "script_blocks"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("blk_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     scene_id = Column(String(32), ForeignKey("scenes.id", ondelete="CASCADE"), nullable=False)
     type = Column(String(20), nullable=False, comment="块类型: scene/character/emotion/action/sound/transition/dialogue/narration/note")
     content = Column(Text, default="", comment="块内容")
@@ -99,7 +99,7 @@ class Character(Base):
     """角色表 — 一个项目包含多个角色。字段对齐前端 character/types.ts。"""
     __tablename__ = "characters"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("char_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(50), nullable=False, comment="角色名")
     role = Column(String(10), default="配角", comment="角色类型: 主角/配角/龙套")
@@ -128,7 +128,7 @@ class StoryboardShot(Base):
     """分镜表 — 一个项目包含多个分镜。字段对齐前端 storyboard/types.ts。"""
     __tablename__ = "storyboard_shots"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("shot_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     shot_number = Column(Integer, nullable=False, comment="镜头编号")
     shot_type = Column(String(20), default="中景", comment="镜头类型: 远景/全景/中景/近景/特写")
@@ -152,7 +152,7 @@ class Skill(Base):
     """技能/风格包表 — 对齐前端 skill/types.ts。"""
     __tablename__ = "skills"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("skill_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     name = Column(String(100), nullable=False, comment="技能名称")
     description = Column(Text, default="", comment="简短描述")
     detailed_description = Column(Text, default="", comment="详细描述")
@@ -180,7 +180,7 @@ class SkillParameter(Base):
     """技能参数表 — 可调参数（滑块/选择器/开关）。"""
     __tablename__ = "skill_parameters"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("param_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     skill_id = Column(String(32), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False, comment="参数名")
     type = Column(String(20), default="slider", comment="类型: slider/select/toggle")
@@ -198,7 +198,7 @@ class SkillReview(Base):
     """技能评价表。"""
     __tablename__ = "skill_reviews"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("rev_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     skill_id = Column(String(32), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False)
     user_name = Column(String(50), default="", comment="用户名")
     avatar = Column(String(500), default="", comment="用户头像 URL")
@@ -213,7 +213,7 @@ class TimelineClip(Base):
     """时间轴片段表 — 合成室的视频/音频/BGM 片段。"""
     __tablename__ = "timeline_clips"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("clip_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(200), nullable=False, comment="片段名称")
     track_type = Column(String(20), default="video", comment="轨道类型: video/audio/bgm/subtitle")
@@ -230,7 +230,7 @@ class SubtitleSegment(Base):
     """字幕段表 — 合成室的字幕内容。"""
     __tablename__ = "subtitle_segments"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("sub_"))
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     text = Column(Text, default="", comment="字幕文本")
     start_time = Column(Float, default=0, comment="开始时间(秒)")

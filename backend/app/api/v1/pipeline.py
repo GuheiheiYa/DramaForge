@@ -241,7 +241,7 @@ from app.models.schemas import ScriptCreate, CharacterCreate, ScriptResponse, Ch
 async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
     """保存 Pipeline 提取的剧本数据到数据库。"""
     script = Script(
-        id=f"scr_{uuid.uuid4().hex[:12]}",
+        id=str(uuid.uuid4()),
         project_id=req.project_id,
         title=req.title,
     )
@@ -249,7 +249,7 @@ async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
     for ep_data in req.episodes:
         episode = Episode(
-            id=f"ep_{uuid.uuid4().hex[:12]}",
+            id=str(uuid.uuid4()),
             script_id=script.id,
             number=ep_data.number,
             title=ep_data.title,
@@ -258,7 +258,7 @@ async def save_script(req: ScriptCreate, db: AsyncSession = Depends(get_db)):
 
         for idx, scene_data in enumerate(ep_data.scenes):
             scene = Scene(
-                id=f"sc_{uuid.uuid4().hex[:12]}",
+                id=str(uuid.uuid4()),
                 episode_id=episode.id,
                 number=scene_data.number if scene_data.number else idx + 1,
                 title=scene_data.title,
@@ -309,7 +309,7 @@ async def save_characters(req: SaveCharactersRequest, db: AsyncSession = Depends
     saved = []
     for char_data in req.characters:
         char = Character(
-            id=f"char_{uuid.uuid4().hex[:12]}",
+            id=str(uuid.uuid4()),
             project_id=req.project_id,
             name=char_data.name,
             role=char_data.role,

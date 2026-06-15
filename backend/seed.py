@@ -1,4 +1,4 @@
-"""数据库初始化脚本 — 清空所有表并灌入 mock 数据，ID 统一 UUID。"""
+"""数据库初始化脚本 — 清空所有表并灌入 mock 数据，纯 UUID ID。"""
 
 import asyncio
 import uuid
@@ -12,15 +12,14 @@ from app.models.db_models import (
 )
 
 
-def uid(prefix: str = "") -> str:
-    """生成 UUID 格式 ID。"""
-    return f"{prefix}{uuid.uuid4().hex[:12]}"
+def uid() -> str:
+    """生成纯 UUID ID。"""
+    return str(uuid.uuid4())
 
 
 async def seed():
     """清空所有表并灌入 mock 数据。"""
     async with engine.begin() as conn:
-        # 删除所有表（包括旧表）
         all_tables = [
             "subtitle_segments", "timeline_clips",
             "skill_reviews", "skill_parameters", "skills",
@@ -30,15 +29,15 @@ async def seed():
         ]
         for table in all_tables:
             await conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
-        # 重建所有表
         await conn.run_sync(Base.metadata.create_all)
 
     print("所有表已清空并重建")
 
     async with async_session() as db:
         # ─── 1. 项目 ───
+        project_id = uid()
         project = Project(
-            id="proj_sakura_001",
+            id=project_id,
             name="《樱花下的约定》第1季",
             type="漫剧",
             status="进行中",
@@ -52,8 +51,8 @@ async def seed():
         db.add(project)
 
         # ─── 2. 剧本 ───
-        script_id = uid("scr_")
-        db.add(Script(id=script_id, project_id="proj_sakura_001", title="《樱花下的约定》"))
+        script_id = uid()
+        db.add(Script(id=script_id, project_id="project_id", title="《樱花下的约定》"))
 
         # ─── 3. 分集 + 场景 + 剧本块 ───
         episodes_data = [
@@ -63,7 +62,7 @@ async def seed():
         ]
         ep_ids = []
         for ep in episodes_data:
-            ep_id = uid("ep_")
+            ep_id = uid()
             db.add(Episode(id=ep_id, script_id=script_id, number=ep["number"], title=ep["title"]))
             ep_ids.append(ep_id)
 
@@ -98,7 +97,7 @@ async def seed():
         ]
 
         for sc in scenes_data:
-            scene_id = uid("sc_")
+            scene_id = uid()
             db.add(Scene(
                 id=scene_id, episode_id=ep_ids[sc["ep_idx"]],
                 number=sc["number"], title=sc["title"],
@@ -106,7 +105,7 @@ async def seed():
             ))
             for idx, blk in enumerate(sc.get("blocks", [])):
                 db.add(ScriptBlock(
-                    id=uid("blk_"), scene_id=scene_id,
+                    id=uid(), scene_id=scene_id,
                     type=blk["type"], content=blk["content"], sort_order=idx,
                 ))
 
@@ -124,7 +123,7 @@ async def seed():
 
         for char in characters_data:
             db.add(Character(
-                id=uid("char_"), project_id="proj_sakura_001",
+                id=uid(), project_id="project_id",
                 name=char["name"], role=char["role"], gender=char["gender"],
                 age=char["age"], description=char["description"],
                 personality=char["personality"], personality_traits=char["traits"],
@@ -145,7 +144,7 @@ async def seed():
 
         for shot in shots_data:
             db.add(StoryboardShot(
-                id=uid("shot_"), project_id="proj_sakura_001",
+                id=uid(), project_id="project_id",
                 shot_number=shot["shot_number"], shot_type=shot["shot_type"],
                 duration=shot["duration"], status="已完成",
                 description=shot["description"], camera_movement=shot["camera_movement"],
@@ -153,7 +152,7 @@ async def seed():
             ))
 
         # ─── 6. 技能包 ───
-        skill_id = uid("skill_")
+        skill_id = uid()
         db.add(Skill(
             id=skill_id, name="日式校园漫剧SKILL", category="漫剧", style="日系",
             description="日式校园漫剧风格，对话简洁有力，情绪表达夸张",
@@ -165,7 +164,6 @@ async def seed():
             usage_instructions="选择此 SKILL 后，AI 将自动生成符合日式校园风格的剧本和分镜。",
         ))
 
-        # 技能参数
         params = [
             {"name": "情感强度", "type": "slider", "value": "70", "min_val": 0, "max_val": 100, "step": 5, "default_value": "70"},
             {"name": "对话风格", "type": "select", "value": "简洁", "options": ["简洁", "文艺", "口语化"], "default_value": "简洁"},
@@ -174,14 +172,13 @@ async def seed():
         ]
         for p in params:
             db.add(SkillParameter(
-                id=uid("param_"), skill_id=skill_id,
+                id=uid(), skill_id=skill_id,
                 name=p["name"], type=p["type"], value=p["value"],
                 min_val=p.get("min_val", 0), max_val=p.get("max_val", 100),
                 step=p.get("step", 1), options=p.get("options", []),
                 default_value=p["default_value"],
             ))
 
-        # 技能评价
         reviews = [
             {"user_name": "编剧小王", "rating": 5, "comment": "日式风格非常到位，生成的对话很有感觉！", "date": "2026-06-01"},
             {"user_name": "动漫爱好者", "rating": 4, "comment": "整体不错，但悬疑部分可以再加强。", "date": "2026-05-28"},
@@ -189,7 +186,7 @@ async def seed():
         ]
         for r in reviews:
             db.add(SkillReview(
-                id=uid("rev_"), skill_id=skill_id,
+                id=uid(), skill_id=skill_id,
                 user_name=r["user_name"], rating=r["rating"],
                 comment=r["comment"], date=r["date"],
             ))
@@ -206,7 +203,7 @@ async def seed():
         ]
         for c in clips:
             db.add(TimelineClip(
-                id=uid("clip_"), project_id="proj_sakura_001",
+                id=uid(), project_id="project_id",
                 name=c["name"], track_type=c["track_type"],
                 start_time=c["start_time"], duration=c["duration"],
                 shot_ref=c.get("shot_ref", ""),
@@ -221,13 +218,12 @@ async def seed():
         ]
         for s in subs:
             db.add(SubtitleSegment(
-                id=uid("sub_"), project_id="proj_sakura_001",
+                id=uid(), project_id="project_id",
                 text=s["text"], start_time=s["start_time"], duration=s["duration"],
             ))
 
         await db.commit()
 
-        # 统计
         counts = {
             "项目": 1, "剧本": 1, "分集": len(episodes_data),
             "场景": len(scenes_data), "剧本块": sum(len(s.get("blocks", [])) for s in scenes_data),
