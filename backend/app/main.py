@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.v1 import projects, scripts, characters, storyboards, generation, skills, pipeline, assets, costs
+from app.api.v1 import projects, scripts, characters, storyboards, generation, skills, pipeline, assets, costs, notifications
 from app.database import init_db
 
 
@@ -48,6 +48,7 @@ app.include_router(skills.router, prefix="/api/v1/skills", tags=["SKILL管理"])
 app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["Pipeline"])
 app.include_router(assets.router, prefix="/api/v1/assets", tags=["素材管理"])
 app.include_router(costs.router, prefix="/api/v1/costs", tags=["成本统计"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["通知管理"])
 
 
 @app.get("/", tags=["健康检查"])

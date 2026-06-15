@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-15 17:00:00 — 通知系统对接数据库
+
+**需求**: [R-010]
+**修改文件**:
+- `backend/app/models/db_models.py` — 新增 Notification 表
+- `backend/app/api/v1/notifications.py` — 新增通知管理路由，支持 CRUD + 标记已读
+- `backend/app/models/schemas.py` — 新增 NotificationCreate/Response schema
+- `backend/app/main.py` — 注册 notifications 路由
+- `app/src/lib/api.ts` — 新增 Notification API 函数
+- `app/src/components/AppTopbar.tsx` — 对接后端 API，移除 mock 数据
+
+**变更摘要**:
+- 后端新增 Notification 数据库表，存储系统通知
+- notifications.py 支持创建、查询、标记已读、全部已读、删除、清空
+- 前端 AppTopbar.tsx 使用 `useEffect` 从后端加载通知列表
+- 未读数量每 30 秒自动刷新，点击通知自动标记已读
+- 全部已读功能调用后端 API 批量标记
+
 ## 2026-06-15 16:30:00 — 成本统计对接数据库
 
 **需求**: [R-009]

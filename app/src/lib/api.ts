@@ -742,3 +742,86 @@ export const getCostRecords = (params?: {
   const query = qs.toString();
   return request<CostRecordData[]>(`/costs${query ? '?' + query : ''}`);
 };
+
+// ─── Notification API ───
+
+export interface NotificationData {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  type: string;
+  is_read: boolean;
+  link: string;
+  created_at: string | null;
+  created_at_str: string;
+}
+
+export interface NotificationListData {
+  items: NotificationData[];
+  total: number;
+  unread_count: number;
+  page: number;
+  page_size: number;
+}
+
+export const getNotifications = (params?: {
+  user_id?: string;
+  is_read?: boolean;
+  page?: number;
+  page_size?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.user_id) qs.set('user_id', params.user_id);
+  if (params?.is_read !== undefined) qs.set('is_read', params.is_read.toString());
+  if (params?.page) qs.set('page', params.page.toString());
+  if (params?.page_size) qs.set('page_size', params.page_size.toString());
+  const query = qs.toString();
+  return request<NotificationListData>(`/notifications${query ? '?' + query : ''}`);
+};
+
+export const getUnreadCount = (userId?: string) => {
+  const qs = userId ? `?user_id=${userId}` : '';
+  return request<{ unread_count: number }>(`/notifications/unread-count${qs}`);
+};
+
+export const createNotification = (data: {
+  user_id?: string;
+  title: string;
+  description?: string;
+  type?: string;
+  link?: string;
+}) => request<NotificationData>('/notifications', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const markNotificationAsRead = (id: string) =>
+  request<{ message: string }>(`/notifications/${id}/read`, {
+    method: 'PUT',
+  });
+
+export const markAllNotificationsAsRead = (userId?: string) => {
+  const qs = userId ? `?user_id=${userId}` : '';
+  return request<{ message: string }>(`/notifications/read-all${qs}`, {
+    method: 'PUT',
+  });
+};
+
+export const deleteNotification = (id: string) =>
+  request<{ message: string }>(`/notifications/${id}`, {
+    method: 'DELETE',
+  });
+
+export const clearNotifications = (params?: {
+  user_id?: string;
+  is_read?: boolean;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.user_id) qs.set('user_id', params.user_id);
+  if (params?.is_read !== undefined) qs.set('is_read', params.is_read.toString());
+  const query = qs.toString();
+  return request<{ message: string }>(`/notifications${query ? '?' + query : ''}`, {
+    method: 'DELETE',
+  });
+};

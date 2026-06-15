@@ -495,3 +495,36 @@ class CostOverallSummary(BaseModel):
     project_count: int
     service_summaries: list[CostServiceSummary]
     project_summaries: list[CostProjectSummary]
+
+
+# ─── 通知 ───
+
+class NotificationCreate(BaseModel):
+    """创建通知请求。"""
+    user_id: str = Field(default="default", description="用户 ID")
+    title: str = Field(..., min_length=1, max_length=200, description="通知标题")
+    description: str = Field(default="", max_length=1000, description="通知描述")
+    type: str = Field(default="info", description="类型: info/success/warning/error")
+    link: str = Field(default="", max_length=500, description="跳转链接")
+
+
+class NotificationResponse(BaseModel):
+    """通知响应。"""
+    id: str
+    user_id: str
+    title: str
+    description: str
+    type: str
+    is_read: bool
+    link: str = ""
+    created_at: str | None = None
+    created_at_str: str = ""
+
+
+class NotificationListResponse(BaseModel):
+    """通知列表响应。"""
+    items: list[NotificationResponse]
+    total: int
+    unread_count: int
+    page: int
+    page_size: int

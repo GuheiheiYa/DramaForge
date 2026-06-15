@@ -205,14 +205,29 @@
 
 ## [F-010] 通知系统 ← [R-010]
 
-**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-15 17:00:00
 
 **实现方式**:
 - 顶部铃铛按钮 + 通知面板下拉
 - 未读标记、全部已读、通知列表
+- **已对接后端 API**：`getNotifications()` 从数据库加载，支持分页
+- 未读数量通过 `getUnreadCount()` 获取，每 30 秒自动刷新
+- 点击通知调用 `markNotificationAsRead()` 标记已读
+- 全部已读调用 `markAllNotificationsAsRead()` 批量标记
 
 **关联文件**:
-- `src/components/AppTopbar.tsx`（NotificationPanel 内嵌）
+- `app/src/components/AppTopbar.tsx` — 对接后端 API，移除 mock 数据
+- `app/src/lib/api.ts` — 新增 Notification API 函数
+- `backend/app/api/v1/notifications.py` — 新增通知管理路由，支持 CRUD + 标记已读
+- `backend/app/models/db_models.py` — 新增 Notification 表
+- `backend/app/models/schemas.py` — 新增 NotificationCreate/Response schema
+
+**数据来源**:
+- 后端 `/api/v1/notifications` API（SQLite 数据库）
+
+**已知问题**:
+- 无 WebSocket 实时推送（当前使用轮询）
+- 通知链接跳转功能待实现
 
 ---
 

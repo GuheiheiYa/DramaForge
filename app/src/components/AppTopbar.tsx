@@ -1,11 +1,18 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, Bell, Plus, HelpCircle, PanelLeft, LayoutGrid, Users, Puzzle, X, Keyboard, MessageSquare, BookOpen, ChevronRight } from 'lucide-react';
+import { Search, Bell, Plus, HelpCircle, PanelLeft, LayoutGrid, Users, Puzzle, X, Keyboard, MessageSquare, BookOpen, ChevronRight, Loader2 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { toastSuccess, toastInfo } from '@/hooks/useToast';
+import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 import { cn } from '@/lib/utils';
+import {
+  getNotifications,
+  getUnreadCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  type NotificationData,
+} from '@/lib/api';
 
 const pathNames: Record<string, string> = {
   '/': '项目工作台',
@@ -74,30 +81,55 @@ function HotkeyDialog({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Notification Panel ───
-interface Notification {
-  id: string;
-  title: string;
-  desc: string;
-  time: string;
-  read: boolean;
-  type: 'success' | 'warning' | 'error' | 'info';
-}
-
-const mockNotifications: Notification[] = [
-  { id: 'n1', title: '视频生成完成', desc: '《樱花下的约定》第1集视频片段已全部生成', time: '2分钟前', read: false, type: 'success' },
-  { id: 'n2', title: '角色形象生成完毕', desc: '角色「小明」的立绘已生成完成', time: '15分钟前', read: false, type: 'success' },
-  { id: 'n3', title: 'API调用超时', desc: '《九霄仙途》剧本生成请求超时，已自动重试', time: '1小时前', read: false, type: 'warning' },
-  { id: 'n4', title: '项目进度过半', desc: '《都市神医》已完成5/12集生成', time: '3小时前', read: true, type: 'info' },
-  { id: 'n5', title: '新SKILL上架', desc: '「古风仙侠漫剧SKILL」已可安装使用', time: '昨天', read: true, type: 'info' },
-];
-
 function NotificationPanel({ onClose }: { onClose: () => void }) {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-  const unread = notifications.filter((n) => !n.read).length;
+  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    toastSuccess('已将所有通知标记为已读');
+  // 从后端加载通知
+  const loadNotifications = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getNotifications({ page_size: 20 });
+      setNotifications(data.items);
+      setUnreadCount(data.unread_count);
+    } catch (err) {
+      console.error('[Notification] 加载失败:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const markAllRead = async () => {
+    try {
+      await markAllNotificationsAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+      toastSuccess('已将所有通知标记为已读');
+    } catch (err) {
+      toastError('操作失败');
+    }
+  };
+
+  const handleNotificationClick = async (notification: NotificationData) => {
+    if (!notification.is_read) {
+      try {
+        await markNotificationAsRead(notification.id);
+        setNotifications((prev) =>
+          prev.map((n) => n.id === notification.id ? { ...n, is_read: true } : n)
+        );
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch (err) {
+        console.error('[Notification] 标记已读失败:', err);
+      }
+    }
+    if (notification.link) {
+      toastInfo(`跳转到: ${notification.link}`);
+    }
   };
 
   return (
@@ -112,11 +144,11 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2">
           <Bell size={16} className="text-[#8B847E]" />
           <span className="text-small font-semibold text-[#383431]">通知</span>
-          {unread > 0 && (
-            <span className="px-1.5 py-0.5 bg-[#B85C50] text-white text-[10px] rounded-full">{unread}</span>
+          {unreadCount > 0 && (
+            <span className="px-1.5 py-0.5 bg-[#B85C50] text-white text-[10px] rounded-full">{unreadCount}</span>
           )}
         </div>
-        {unread > 0 && (
+        {unreadCount > 0 && (
           <button onClick={markAllRead} className="text-[12px] text-[#5A7FA8] hover:text-[#4A6F8A] transition-colors">
             全部已读
           </button>
@@ -124,33 +156,41 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="max-h-[360px] overflow-y-auto">
-        {notifications.map((n) => (
-          <div
-            key={n.id}
-            className={cn(
-              'px-5 py-3 border-b border-[#F8F7F6] hover:bg-[#FBF7F4] transition-colors cursor-pointer',
-              !n.read && 'bg-[#FDFBF9]'
-            )}
-            onClick={() => {
-              setNotifications((prev) => prev.map((nn) => nn.id === n.id ? { ...nn, read: true } : nn));
-              toastInfo(`查看通知: ${n.title}`);
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className={cn(
-                'w-2 h-2 rounded-full mt-1.5 shrink-0',
-                n.type === 'success' ? 'bg-[#5B8C5A]' :
-                n.type === 'warning' ? 'bg-[#C49A3C]' :
-                n.type === 'error' ? 'bg-[#B85C50]' : 'bg-[#5A7FA8]'
-              )} />
-              <div className="flex-1 min-w-0">
-                <p className={cn('text-small truncate', n.read ? 'text-[#6E6862]' : 'text-[#383431] font-medium')}>{n.title}</p>
-                <p className="text-caption text-[#A8A39E] mt-0.5 line-clamp-1">{n.desc}</p>
-                <p className="text-[11px] text-[#C5C1BC] mt-1">{n.time}</p>
+        {loading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-[#A8835F]" />
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10">
+            <Bell size={32} className="text-[#C5C1BC] mb-2" />
+            <p className="text-small text-[#A8A39E]">暂无通知</p>
+          </div>
+        ) : (
+          notifications.map((n) => (
+            <div
+              key={n.id}
+              className={cn(
+                'px-5 py-3 border-b border-[#F8F7F6] hover:bg-[#FBF7F4] transition-colors cursor-pointer',
+                !n.is_read && 'bg-[#FDFBF9]'
+              )}
+              onClick={() => handleNotificationClick(n)}
+            >
+              <div className="flex items-start gap-3">
+                <div className={cn(
+                  'w-2 h-2 rounded-full mt-1.5 shrink-0',
+                  n.type === 'success' ? 'bg-[#5B8C5A]' :
+                  n.type === 'warning' ? 'bg-[#C49A3C]' :
+                  n.type === 'error' ? 'bg-[#B85C50]' : 'bg-[#5A7FA8]'
+                )} />
+                <div className="flex-1 min-w-0">
+                  <p className={cn('text-small truncate', n.is_read ? 'text-[#6E6862]' : 'text-[#383431] font-medium')}>{n.title}</p>
+                  <p className="text-caption text-[#A8A39E] mt-0.5 line-clamp-1">{n.description}</p>
+                  <p className="text-[11px] text-[#C5C1BC] mt-1">{n.created_at_str}</p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <button
@@ -172,9 +212,26 @@ export default function AppTopbar() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
   const createRef = useRef<HTMLDivElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // 加载未读通知数量
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      try {
+        const data = await getUnreadCount();
+        setUnreadCount(data.unread_count);
+      } catch (err) {
+        console.error('[AppTopbar] 加载未读数量失败:', err);
+      }
+    };
+    loadUnreadCount();
+    // 每 30 秒刷新一次
+    const interval = setInterval(loadUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -243,7 +300,9 @@ export default function AppTopbar() {
             className="relative w-8 h-8 rounded-md flex items-center justify-center hover:bg-[#F8F7F6] transition-colors"
           >
             <Bell size={17} className="text-[#8B847E]" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#B85C50] animate-pulse" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#B85C50] animate-pulse" />
+            )}
           </button>
           <AnimatePresence>
             {notifOpen && <NotificationPanel onClose={() => setNotifOpen(false)} />}

@@ -298,3 +298,17 @@ class CostRecord(Base):
 
     # 关联
     project = relationship("Project", backref="cost_records")
+
+
+class Notification(Base):
+    """通知表 — 系统通知和消息。"""
+    __tablename__ = "notifications"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
+    user_id = Column(String(32), default="default", comment="用户 ID")
+    title = Column(String(200), nullable=False, comment="通知标题")
+    description = Column(Text, default="", comment="通知描述")
+    type = Column(String(20), default="info", comment="类型: info/success/warning/error")
+    is_read = Column(Boolean, default=False, comment="是否已读")
+    link = Column(String(500), default="", comment="跳转链接")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
