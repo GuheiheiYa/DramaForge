@@ -15,7 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAppStore, type ProjectType, type Project } from '@/store/useAppStore';
-import { apiGetProjects, apiCreateProject, apiDeleteProject } from '@/lib/api';
+import { getProjects as apiGetProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject } from '@/lib/api';
 import ProjectCard from '@/components/ProjectCard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { toast } from '@/hooks/useToast';
