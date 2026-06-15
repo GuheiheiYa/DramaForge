@@ -331,3 +331,58 @@ export const savePipelineCharacters = (project_id: string, characters: {
   method: 'POST',
   body: JSON.stringify({ project_id, characters }),
 });
+
+// ─── Chat Stream API (SSE) ───
+
+export interface ChatStreamChunk {
+  type: 'thinking' | 'content' | 'error' | 'done';
+  data: string;
+}
+
+/**
+ * SSE 流式 AI 对话。
+ * @param messages 对话消息列表
+ * @param onChunk 收到 chunk 时的回调
+ * @param model 模型名称
+ */
+export async function chatStream(
+  messages: { role: string; content: string }[],
+  onChunk: (chunk: ChatStreamChunk) => void,
+  model: string = 'mimo',
+): Promise<void> {
+  const resp = await fetch(`${API_BASE}/pipeline/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, model, stream: true }),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Chat stream ${resp.status}`);
+  }
+
+  const reader = resp.body?.getReader();
+  if (!reader) throw new Error('No readable stream');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const chunk = JSON.parse(line.slice(6)) as ChatStreamChunk;
+          onChunk(chunk);
+        } catch {
+          // 忽略解析错误
+        }
+      }
+    }
+  }
+}
