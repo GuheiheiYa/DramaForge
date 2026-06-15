@@ -1,6 +1,54 @@
 # 需求文档
 
-**最后更新**: 2026-06-15 11:30:00
+**最后更新**: 2026-06-15 11:50:00
+
+---
+
+## 需求拆分与实施计划
+
+### 阶段1：项目上下文贯穿（最基础，其他都依赖它）
+
+| # | 子任务 | 验收标准 | 依赖 |
+|---|--------|---------|------|
+| 1.1 | useAppStore selectedProjectId 持久化 localStorage | 刷新页面后 selectedProjectId 不丢失 | 无 |
+| 1.2 | Dashboard 对接 getProjects API | 页面显示数据库中的项目，不是 mock | 无 |
+| 1.3 | Dashboard 对接 createProject API | 创建后数据库有记录，返回真实 UUID | 1.2 |
+| 1.4 | CharacterManager 读取 selectedProjectId | 只加载当前项目的角色 | 1.1 |
+| 1.5 | ScriptEditor 读取 selectedProjectId | 只加载当前项目的剧本 | 1.1 |
+| 1.6 | StoryboardWorkbench 读取 selectedProjectId | 只加载当前项目的分镜 | 1.1 |
+
+**可测试点**: Dashboard 创建项目 → 各页面只显示该项目数据
+
+### 阶段2：Chat 项目绑定
+
+| # | 子任务 | 验收标准 | 依赖 |
+|---|--------|---------|------|
+| 2.1 | Chat 顶部添加项目下拉选择器 | 能看到所有项目，能切换 | 1.2 |
+| 2.2 | 选择「新建项目」弹出创建对话框 | 创建后自动选中新项目 | 2.1 |
+| 2.3 | Pipeline savePipelineScript 使用真实 project_id | 数据库里剧本关联到正确项目 | 2.1 |
+| 2.4 | Pipeline savePipelineCharacters 使用真实 project_id | 数据库里角色关联到正确项目 | 2.1 |
+
+**可测试点**: Chat 创建项目 → Dashboard 能看到 → 各页面能编辑
+
+### 阶段3：AI 入口
+
+| # | 子任务 | 验收标准 | 依赖 |
+|---|--------|---------|------|
+| 3.1 | ScriptEditor AI 面板接入真实 AI 生成 | 点击生成 → AI 返回内容 → 填入编辑器 | 1.5 |
+| 3.2 | CharacterManager 添加「AI 生成角色」按钮 | 点击 → AI 返回角色 → 保存到数据库 | 1.4 |
+| 3.3 | StoryboardWorkbench 添加「AI 生成分镜」按钮 | 点击 → AI 返回分镜 → 保存到数据库 | 1.6 |
+
+**可测试点**: ScriptEditor 点 AI → 生成剧本 → 保存到数据库
+
+### 阶段4：外部 API（后续）
+
+| # | 子任务 | 依赖 |
+|---|--------|------|
+| 4.1 | 即梦AI 图像生成接入 | 需要 API Key |
+| 4.2 | 火山引擎 TTS 配音接入 | 需要 API Key |
+| 4.3 | Celery 异步任务队列 | 需要 Redis |
+
+**可测试点**: Pipeline 真实跑通 6 步
 
 ---
 
