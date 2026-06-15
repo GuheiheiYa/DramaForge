@@ -72,7 +72,7 @@ export default function CharacterManager() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [detailCharacter, setDetailCharacter] = useState<Character | null>(null);
-  const { success } = useToast();
+  const { success, info } = useToast();
 
   // 从后端加载角色列表（按项目过滤）
   useEffect(() => {
