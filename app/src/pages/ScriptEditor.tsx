@@ -10,6 +10,7 @@ import { useToast, MSG } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
 import type { ScriptBlock, Episode } from './script/types';
 import { getScripts, updateScript, type ScriptData, type EpisodeData } from '@/lib/api';
+import ProjectSelector from '@/components/ProjectSelector';
 
 /** 后端 ScriptData → 前端 Episode[] 转换 */
 function toFrontendEpisodes(script: ScriptData): Episode[] {

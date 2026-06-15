@@ -1,127 +1,213 @@
-# 全量数据库重建 + 前后端 CRUD 对接计划
+# 全流程打通计划
 
-## Context
+## 两条创建路线
 
-当前所有页面（CharacterManager、ScriptEditor、StoryboardWorkbench、Dashboard、SkillMarket、ComposerStudio 等）全部使用本地 mock 数据，后端 API 大部分用内存字典或 mock。需要：
-1. 根据前端 mock 数据结构重建所有数据库表
-2. 所有 ID 统一使用 UUID
-3. 后端 API 全部改为数据库操作
-4. 前端页面全部对接后端 API，实现真实 CRUD
-5. 表之间建立正确的外键关联
+### 路线 A：Agent 驱动（Chat 页面）
 
-## 第一步：重建数据库模型（db_models.py）
+```
+用户输入创意 → AI 生成剧本 → 自动创建项目 → 自动填充剧本/角色/分镜
+→ 用户跳转各页面微调 → AI 辅助修改 → 最终合成
+```
 
-**文件**: `backend/app/models/db_models.py`
+### 路线 B：手动创建（Dashboard）
 
-根据 mock 数据结构，重建以下表（所有 ID 用 UUID）：
+```
+用户创建项目 → 跳转剧本编辑器 → 手动/AI 写剧本
+→ 跳转角色管理 → 手动/AI 设计角色
+→ 跳转分镜工作台 → 手动/AI 做分镜
+→ 跳转合成室 → 合成最终视频
+```
 
-| 表名 | 说明 | 核心字段 | 关联 |
-|------|------|---------|------|
-| `projects` | 项目 | id, name, type, status, description, episodes, skill_id | — |
-| `scripts` | 剧本 | id, project_id(FK), title | → projects |
-| `episodes` | 分集 | id, script_id(FK), number, title | → scripts |
-| `scenes` | 场景 | id, episode_id(FK), number, title, location, time_tag | → episodes |
-| `script_blocks` | 剧本块 | id, scene_id(FK), type, content, sort_order | → scenes |
-| `characters` | 角色 | id, project_id(FK), name, role, gender, age, description, personality, personality_traits(JSON), appearance, costume, background, special_setting, avatar_color, avatar_url, assets_json, relationships_json, scenes_json | → projects |
-| `storyboard_shots` | 分镜 | id, project_id(FK), shot_number, shot_type, duration, status, description, camera_movement, composition, lighting, character_action, dialogue, scene_ref, characters(JSON) | → projects |
+---
 
-## 第二步：更新 Pydantic Schema（schemas.py）
+## 完整步骤流程（7 步）
 
-**文件**: `backend/app/models/schemas.py`
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DramaForge 创作流程                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ① 项目创建 ──→ ② 剧本 ──→ ③ 角色 ──→ ④ 分镜 ──→ ⑤ 视频   │
+│      │            │          │          │          │        │
+│      │         [AI入口]   [AI入口]   [AI入口]   [AI入口]    │
+│      │            │          │          │          │        │
+│      │            └──────────┴──────────┴──────────┘        │
+│      │                       │                              │
+│      │                    ⑥ 配音                            │
+│      │                       │                              │
+│      │                    ⑦ 合成导出                        │
+│      │                                                      │
+│      └──→ Chat 页面可随时介入，选择项目继续创作               │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-- 所有 Create/Response schema 对齐 mock 数据字段
-- `id` 字段统一可选（创建时不传，数据库自动生成 UUID）
-- 新增 Storyboard 相关 schema
+---
 
-## 第三步：后端 API 改造（数据库操作）
+## 每步涉及内容
 
-### 3.1 projects.py → 数据库 CRUD
-- GET `/` — 查询项目列表（支持 type/status 筛选）
-- POST `/` — 创建项目
-- GET `/{id}` — 项目详情
-- PUT `/{id}` — 更新项目
-- DELETE `/{id}` — 删除项目
+### 步骤 ①：项目创建
 
-### 3.2 scripts.py → 补全 list 端点
-- GET `/` — 查询所有剧本（支持 project_id 筛选）
-- 保持现有 POST/GET/PUT/DELETE
+**涉及数据**：projects 表
+**涉及页面**：Dashboard、Chat
+**两种入口**：
+- Dashboard：「新建项目」按钮 → 填写名称/类型/集数/选择 SKILL → 创建项目
+- Chat：用户说「帮我做一个校园悬疑漫剧」→ AI 生成后自动创建项目
 
-### 3.3 characters.py → 已完成，无需改动
+**AI 入口**：Chat 页面选择「新建项目」后，AI 自动填充项目信息
 
-### 3.4 storyboards.py → 数据库 CRUD
-- GET `/` — 查询分镜列表（支持 project_id 筛选）
-- POST `/` — 创建分镜
-- GET `/{id}` — 分镜详情
-- PUT `/{id}` — 更新分镜
-- DELETE `/{id}` — 删除分镜
-- POST `/batch` — 批量创建分镜
+### 步骤 ②：剧本创作
 
-### 3.5 pipeline.py → save 端点关联 project_id
-- save-script 和 save-characters 关联到真实 project_id
+**涉及数据**：scripts → episodes → scenes → script_blocks（4 张表链式关联）
+**涉及页面**：ScriptEditor、Chat
+**两种入口**：
+- ScriptEditor：手动添加集/场景/剧本块，或点击「AI 助手」按钮让 AI 生成
+- Chat：AI 自动生成剧本并保存到项目
 
-## 第四步：前端 API 层补全（api.ts）
+**AI 入口**：
+- ScriptEditor 右侧面板已有 AIScriptPanel，可让 AI 生成/修改内容
+- Chat 中对已有项目说「帮我修改第2集的剧情」→ AI 读取现有剧本并修改
 
-**文件**: `app/src/lib/api.ts`
+### 步骤 ③：角色设计
 
-新增：
-- Projects API: `getProjects`, `createProject`, `getProject`, `updateProject`, `deleteProject`
-- Scripts API: `getScripts` (list), 补全现有
-- Storyboards API: `getShots`, `createShot`, `updateShot`, `deleteShot`
+**涉及数据**：characters 表（project_id 关联）
+**涉及页面**：CharacterManager、Chat
+**两种入口**：
+- CharacterManager：手动创建角色，或点击「AI 生成」按钮
+- Chat：AI 根据剧本自动生成角色
 
-## 第五步：前端页面对接 API
+**AI 入口**：
+- CharacterManager 已有「生成形象」按钮，可扩展为「AI 生成角色」
+- Chat 中说「帮我设计主角」→ AI 根据剧本生成角色
 
-### 5.1 CharacterManager.tsx
-- `useState(mockCharacters)` → `useEffect` 加载 `getCharacters()`
-- `handleSave` → 调用 `createCharacter()` / `updateCharacter()`
-- `handleDelete` → 调用 `deleteCharacter()`
+### 步骤 ④：分镜制作
 
-### 5.2 ScriptEditor.tsx
-- `useState(episodes)` → `useEffect` 加载 `getScript(projectId)`
-- `handleSave` → 调用 API 保存
-- 场景/块增删改 → 调用对应 API
+**涉及数据**：storyboard_shots 表（project_id 关联）
+**涉及页面**：StoryboardWorkbench、Chat
+**两种入口**：
+- StoryboardWorkbench：手动添加分镜，或点击「AI 生成」按钮
+- Chat：AI 根据剧本自动生成分镜
 
-### 5.3 StoryboardWorkbench.tsx
-- `useState(mockShots)` → `useEffect` 加载 `getShots(projectId)`
-- `handleAddShot` → `createShot()`
-- `handleUpdateShot` → `updateShot()`
-- `handleDeleteShot` → `deleteShot()`
+**AI 入口**：
+- StoryboardWorkbench 可添加「AI 生成分镜」按钮
+- Chat 中说「帮我做分镜」→ AI 根据剧本生成分镜
 
-### 5.4 Dashboard.tsx
-- 从 `useAppStore` 改为从 API 加载项目列表
-- 创建/删除项目调用 API
+### 步骤 ⑤：视频生成（需要即梦AI API）
 
-## 第六步：seed.py 更新
+**涉及数据**：timeline_clips 表（project_id 关联）
+**涉及页面**：ComposerStudio
+**状态**：需要 R-023（即梦AI 接入）
 
-**文件**: `backend/seed.py`
+### 步骤 ⑥：配音生成（需要火山引擎 TTS）
 
-- 删除旧表，重建新表
-- 灌入全部 mock 数据（项目 + 剧本 + 场景 + 块 + 角色 + 分镜）
-- 所有 ID 使用 UUID 格式
+**涉及数据**：timeline_clips 表（track_type='audio'）
+**涉及页面**：ComposerStudio
+**状态**：需要 R-024（TTS 接入）
 
-## 第七步：验证
+### 步骤 ⑦：合成导出
 
-1. 启动后端 `python -m uvicorn app.main:app --port 7778`
-2. 运行 `python seed.py` 灌入数据
-3. 前端逐页面验证 CRUD：
-   - Dashboard: 创建/删除项目
-   - ScriptEditor: 加载/编辑/保存剧本
-   - CharacterManager: 增删改查角色
-   - StoryboardWorkbench: 增删改查分镜
+**涉及数据**：timeline_clips + subtitle_segments
+**涉及页面**：ComposerStudio
+**状态**：需要视频合成服务
+
+---
+
+## 项目上下文传递方案
+
+### 方案：localStorage 持久化 + 全局 store
+
+```
+selectedProjectId
+  ├── 写入时机：Dashboard 点击项目 / Chat 创建项目 / 用户手动选择
+  ├── 持久化：同步写入 localStorage
+  ├── 读取时机：各页面 useEffect 初始化时
+  └── 用途：API 调用时过滤 project_id
+```
+
+**不采用 URL 动态路由的原因**：
+- 当前所有路由是扁平的，改造成本高
+- 侧边栏导航是静态路径，改 URL 需要改所有链接
+- localStorage 方案更简单，够用
+
+### 实现细节
+
+1. **useAppStore 改造**：
+   - `selectedProjectId` 初始化时从 localStorage 读取
+   - `setSelectedProject` 写入时同步到 localStorage
+
+2. **各页面读取**：
+   - CharacterManager/ScriptEditor/StoryboardWorkbench 的 useEffect 中读取 `selectedProjectId`
+   - 传入 API 调用：`apiGetCharacters(selectedProjectId)`
+
+3. **Chat 页面项目选择器**：
+   - 顶部添加项目下拉框
+   - 选择项目后，Pipeline 保存时使用该项目 ID
+   - 选择「新建」则先调 createProject API
+
+4. **Dashboard 改造**：
+   - 项目列表从 API 加载（替换 mock）
+   - 创建项目调 API（替换本地 store）
+   - 项目卡片点击跳转到对应页面（不只是 /script）
+
+---
+
+## Chat 页面项目选择器设计
+
+```
+┌─────────────────────────────────────────────┐
+│ [MiMo ▾] [日式校园 ▾] [项目: 樱花下的约定 ▾] │
+├─────────────────────────────────────────────┤
+│                                             │
+│  消息区域...                                 │
+│                                             │
+│  ┌─ Pipeline 面板 ──────────────────────┐   │
+│  │ ① 剧本 ✅  ② 角色 ✅  ③ 分镜 🔄    │   │
+│  │ ④ 视频 ⏳  ⑤ 配音 ⏳  ⑥ 合成 ⏳    │   │
+│  └──────────────────────────────────────┘   │
+│                                             │
+│  [输入消息...]                              │
+└─────────────────────────────────────────────┘
+```
+
+- 项目下拉框显示当前所有项目
+- 选择「+ 新建项目」弹出创建对话框
+- Pipeline 保存时自动关联到选中的项目
+
+---
+
+## 实施步骤
+
+### 第一阶段：项目上下文贯穿（修复断裂点）
+
+1. **useAppStore 改造**：selectedProjectId 持久化到 localStorage
+2. **Dashboard 对接 API**：getProjects/createProject 替换 mock
+3. **CharacterManager**：读取 selectedProjectId，传入 API 调用
+4. **ScriptEditor**：读取 selectedProjectId，传入 API 调用
+5. **StoryboardWorkbench**：读取 selectedProjectId，传入 API 调用
+6. **Chat 项目选择器**：添加项目下拉框，Pipeline 保存使用真实 project_id
+
+### 第二阶段：AI 入口完善
+
+7. **ScriptEditor AI 面板**：接入真实 AI 生成（目前是 mock）
+8. **CharacterManager AI 按钮**：添加「AI 生成角色」功能
+9. **StoryboardWorkbench AI 按钮**：添加「AI 生成分镜」功能
+
+### 第三阶段：外部 API 接入（后续）
+
+10. 即梦AI 图像/视频生成
+11. 火山引擎 TTS 配音
+12. Celery 异步任务队列
+
+---
 
 ## 关键文件清单
 
-| 文件 | 操作 |
+| 文件 | 改动 |
 |------|------|
-| `backend/app/models/db_models.py` | 重写 |
-| `backend/app/models/schemas.py` | 重写 |
-| `backend/app/api/v1/projects.py` | 改为数据库操作 |
-| `backend/app/api/v1/scripts.py` | 补全 list 端点 |
-| `backend/app/api/v1/storyboards.py` | 改为数据库操作 |
-| `backend/app/api/v1/characters.py` | 微调 |
-| `backend/app/api/v1/pipeline.py` | save 端点关联 project |
-| `backend/seed.py` | 重写 |
-| `app/src/lib/api.ts` | 补全 API 函数 |
-| `app/src/pages/CharacterManager.tsx` | 对接 API |
-| `app/src/pages/ScriptEditor.tsx` | 对接 API |
-| `app/src/pages/StoryboardWorkbench.tsx` | 对接 API |
-| `app/src/pages/Dashboard.tsx` | 对接 API |
+| `app/src/store/useAppStore.ts` | selectedProjectId 持久化到 localStorage |
+| `app/src/pages/Dashboard.tsx` | 对接 getProjects/createProject API |
+| `app/src/pages/CharacterManager.tsx` | 读取 selectedProjectId 传入 API |
+| `app/src/pages/ScriptEditor.tsx` | 读取 selectedProjectId 传入 API |
+| `app/src/pages/StoryboardWorkbench.tsx` | 读取 selectedProjectId 传入 API |
+| `app/src/pages/Chat.tsx` | 添加项目选择器，Pipeline 保存用真实 project_id |
+| `app/src/components/AppTopbar.tsx` | 可选：顶部显示当前项目名 |

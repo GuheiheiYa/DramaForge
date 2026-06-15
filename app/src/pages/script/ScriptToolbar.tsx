@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast, MSG } from '@/hooks/useToast';
+import ProjectSelector from '@/components/ProjectSelector';
 
 interface ScriptToolbarProps {
   wordCount: number;
@@ -264,8 +265,9 @@ export default function ScriptToolbar({
         </span>
       </div>
 
-      {/* Right: Save status + Export + Save */}
+      {/* Right: Project Selector + Save status + Export + Save */}
       <div className="flex items-center gap-3">
+        <ProjectSelector />
         <motion.span
           className={cn('text-caption flex items-center gap-1', status.color)}
           key={saveStatus}

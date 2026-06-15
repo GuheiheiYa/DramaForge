@@ -9,6 +9,7 @@ import type { Character } from './character/types';
 import { mockCharacters } from './character/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
+import ProjectSelector from '@/components/ProjectSelector';
 import {
   getCharacters as apiGetCharacters,
   createCharacter as apiCreateCharacter,
@@ -249,7 +250,10 @@ export default function CharacterManager() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <h1 className="text-h1 text-[#383431]">角色管理台</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-h1 text-[#383431]">角色管理台</h1>
+            <ProjectSelector />
+          </div>
           <p className="text-body text-[#A8A39E] mt-2">
             管理项目中的所有角色，生成和编辑角色形象
           </p>

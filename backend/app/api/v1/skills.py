@@ -1,7 +1,7 @@
 """SKILL 管理路由 — 对接数据库。"""
 
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
@@ -15,7 +15,7 @@ router = APIRouter()
 async def list_skills(
     category: str | None = None,
     style: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取 SKILL 列表，支持按分类和风格筛选。"""
     query = select(Skill)
@@ -24,22 +24,22 @@ async def list_skills(
     if style:
         query = query.where(Skill.style == style)
     query = query.order_by(Skill.download_count.desc())
-    result = db.execute(query)
+    result = await db.execute(query)
     skills = result.scalars().all()
     return [_skill_to_response(s) for s in skills]
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
-async def get_skill(skill_id: str, db: Session = Depends(get_db)):
+async def get_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
     """获取 SKILL 详情。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
     return _skill_to_response(skill)
 
 
 @router.post("", response_model=SkillResponse)
-async def create_skill(data: SkillCreate, db: Session = Depends(get_db)):
+async def create_skill(data: SkillCreate, db: AsyncSession = Depends(get_db)):
     """创建新 SKILL。"""
     skill = Skill(
         name=data.name,
@@ -56,8 +56,8 @@ async def create_skill(data: SkillCreate, db: Session = Depends(get_db)):
         usage_instructions=data.usage_instructions or "",
     )
     db.add(skill)
-    db.commit()
-    db.refresh(skill)
+    await db.commit()
+    await db.refresh(skill)
     return _skill_to_response(skill)
 
 
@@ -65,10 +65,10 @@ async def create_skill(data: SkillCreate, db: Session = Depends(get_db)):
 async def update_skill(
     skill_id: str,
     data: SkillUpdate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """更新 SKILL 信息。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
 
@@ -76,45 +76,45 @@ async def update_skill(
     for key, value in update_data.items():
         setattr(skill, key, value)
 
-    db.commit()
-    db.refresh(skill)
+    await db.commit()
+    await db.refresh(skill)
     return _skill_to_response(skill)
 
 
 @router.delete("/{skill_id}", response_model=MessageResponse)
-async def delete_skill(skill_id: str, db: Session = Depends(get_db)):
+async def delete_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
     """删除 SKILL。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
 
-    db.delete(skill)
-    db.commit()
+    await db.delete(skill)
+    await db.commit()
     return MessageResponse(message=f"SKILL「{skill.name}」已删除")
 
 
 @router.post("/{skill_id}/install", response_model=MessageResponse)
-async def install_skill(skill_id: str, db: Session = Depends(get_db)):
+async def install_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
     """安装 SKILL（增加下载次数）。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
 
     skill.download_count += 1
     skill.install_status = "installed"
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"SKILL「{skill.name}」安装成功")
 
 
 @router.post("/{skill_id}/uninstall", response_model=MessageResponse)
-async def uninstall_skill(skill_id: str, db: Session = Depends(get_db)):
+async def uninstall_skill(skill_id: str, db: AsyncSession = Depends(get_db)):
     """卸载 SKILL。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
 
     skill.install_status = "not_installed"
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"SKILL「{skill.name}」已卸载")
 
 
@@ -124,10 +124,10 @@ async def rate_skill(
     rating: int,
     comment: str = "",
     user_name: str = "匿名用户",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """评价 SKILL。"""
-    skill = db.get(Skill, skill_id)
+    skill = await db.get(Skill, skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail="SKILL 不存在")
 
@@ -147,7 +147,7 @@ async def rate_skill(
     skill.review_count += 1
     skill.rating = ((skill.rating * (skill.review_count - 1)) + rating) / skill.review_count
 
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"评价成功，当前评分 {skill.rating:.1f}")
 
 

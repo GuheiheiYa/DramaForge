@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.database import get_db
@@ -30,7 +30,7 @@ async def list_assets(
     type: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取素材列表，支持筛选和分页。"""
     query = select(Asset)
@@ -46,12 +46,12 @@ async def list_assets(
         count_query = count_query.where(Asset.project_id == project_id)
     if type:
         count_query = count_query.where(Asset.type == type)
-    total = len(db.execute(count_query).scalars().all())
+    total = len(await db.execute(count_query).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(Asset.created_at))
     query = query.offset((page - 1) * page_size).limit(page_size)
-    result = db.execute(query)
+    result = await db.execute(query)
     assets = result.scalars().all()
 
     return {
@@ -63,9 +63,9 @@ async def list_assets(
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)
-async def get_asset(asset_id: str, db: Session = Depends(get_db)):
+async def get_asset(asset_id: str, db: AsyncSession = Depends(get_db)):
     """获取素材详情。"""
-    asset = db.get(Asset, asset_id)
+    asset = await db.get(Asset, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
     return _asset_to_response(asset)
@@ -76,7 +76,7 @@ async def upload_asset(
     project_id: str = Form(...),
     name: str = Form(...),
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """上传素材文件。"""
     # 确定文件类型
@@ -109,9 +109,9 @@ async def upload_asset(
         file_size=len(content),
         mime_type=mime_type,
     )
-    db.add(asset)
-    db.commit()
-    db.refresh(asset)
+    await db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
 
     return _asset_to_response(asset)
 
@@ -120,25 +120,25 @@ async def upload_asset(
 async def update_asset(
     asset_id: str,
     name: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """更新素材信息（仅名称）。"""
-    asset = db.get(Asset, asset_id)
+    asset = await db.get(Asset, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
 
     if name:
         asset.name = name
 
-    db.commit()
-    db.refresh(asset)
+    await db.commit()
+    await db.refresh(asset)
     return _asset_to_response(asset)
 
 
 @router.delete("/{asset_id}", response_model=MessageResponse)
-async def delete_asset(asset_id: str, db: Session = Depends(get_db)):
+async def delete_asset(asset_id: str, db: AsyncSession = Depends(get_db)):
     """删除素材。"""
-    asset = db.get(Asset, asset_id)
+    asset = await db.get(Asset, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
 
@@ -148,30 +148,30 @@ async def delete_asset(asset_id: str, db: Session = Depends(get_db)):
     if asset.thumbnail_path and os.path.exists(asset.thumbnail_path):
         os.remove(asset.thumbnail_path)
 
-    db.delete(asset)
-    db.commit()
+    await db.delete(asset)
+    await db.commit()
     return MessageResponse(message=f"素材「{asset.name}」已删除")
 
 
 @router.delete("", response_model=MessageResponse)
 async def batch_delete_assets(
     asset_ids: list[str],
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """批量删除素材。"""
     deleted_count = 0
     for asset_id in asset_ids:
-        asset = db.get(Asset, asset_id)
+        asset = await db.get(Asset, asset_id)
         if asset:
             # 删除文件
             if asset.file_path and os.path.exists(asset.file_path):
                 os.remove(asset.file_path)
             if asset.thumbnail_path and os.path.exists(asset.thumbnail_path):
                 os.remove(asset.thumbnail_path)
-            db.delete(asset)
+            await db.delete(asset)
             deleted_count += 1
 
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"已删除 {deleted_count} 个素材")
 
 

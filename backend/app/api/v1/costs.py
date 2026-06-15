@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 
 from app.database import get_db
@@ -48,7 +48,7 @@ SERVICE_LABELS = {
 async def get_cost_summary(
     project_id: str | None = None,
     days: int = Query(default=30, ge=1, le=365),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取成本统计摘要。"""
     # 时间范围
@@ -59,7 +59,7 @@ async def get_cost_summary(
     if project_id:
         query = query.where(CostRecord.project_id == project_id)
 
-    records = db.execute(query).scalars().all()
+    records = await db.execute(query).scalars().all()
 
     # 总费用
     total_cost = sum(r.amount for r in records)
@@ -124,7 +124,7 @@ async def get_cost_summary(
     # 按项目统计详情
     project_summaries = []
     for pid, amount in project_costs.items():
-        project = db.get(Project, pid)
+        project = await db.get(Project, pid)
         project_records = [r for r in records if r.project_id == pid]
         episode_count = project.episodes if project else 1
         cost_per_episode = amount / episode_count if episode_count > 0 else amount
@@ -169,7 +169,7 @@ async def get_cost_summary(
 @router.post("", response_model=CostRecordResponse)
 async def create_cost_record(
     data: CostRecordCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """创建成本记录（供内部调用）。"""
     record = CostRecord(
@@ -181,9 +181,9 @@ async def create_cost_record(
         usage_value=data.usage_value or 0,
         usage_unit=data.usage_unit or "",
     )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
+    await db.add(record)
+    await db.commit()
+    await db.refresh(record)
     return _cost_to_response(record)
 
 
@@ -193,7 +193,7 @@ async def list_cost_records(
     service: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取成本记录列表。"""
     query = select(CostRecord)
@@ -206,7 +206,7 @@ async def list_cost_records(
     query = query.order_by(desc(CostRecord.created_at))
     query = query.offset((page - 1) * page_size).limit(page_size)
 
-    records = db.execute(query).scalars().all()
+    records = await db.execute(query).scalars().all()
     return [_cost_to_response(r) for r in records]
 
 

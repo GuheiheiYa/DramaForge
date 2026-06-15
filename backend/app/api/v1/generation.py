@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
 from app.database import get_db
@@ -21,7 +21,7 @@ router = APIRouter()
 @router.post("/submit", response_model=GenerationTaskResponse)
 async def submit_task(
     data: GenerationTaskCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """提交生成任务。"""
     task = GenerationTask(
@@ -32,9 +32,9 @@ async def submit_task(
         progress=0,
         detail="任务已提交，正在排队处理",
     )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
+    await db.add(task)
+    await db.commit()
+    await db.refresh(task)
 
     # TODO: 实际提交到 Celery 任务队列
     return _task_to_response(task)
@@ -47,7 +47,7 @@ async def list_tasks(
     status: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取生成任务列表，支持筛选和分页。"""
     query = select(GenerationTask)
@@ -67,12 +67,12 @@ async def list_tasks(
         count_query = count_query.where(GenerationTask.stage == stage)
     if status:
         count_query = count_query.where(GenerationTask.status == status)
-    total = len(db.execute(count_query).scalars().all())
+    total = len(await db.execute(count_query).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(GenerationTask.created_at))
     query = query.offset((page - 1) * page_size).limit(page_size)
-    result = db.execute(query)
+    result = await db.execute(query)
     tasks = result.scalars().all()
 
     return {
@@ -84,9 +84,9 @@ async def list_tasks(
 
 
 @router.get("/{task_id}", response_model=GenerationTaskResponse)
-async def get_task(task_id: str, db: Session = Depends(get_db)):
+async def get_task(task_id: str, db: AsyncSession = Depends(get_db)):
     """查询任务状态。"""
-    task = db.get(GenerationTask, task_id)
+    task = await db.get(GenerationTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     return _task_to_response(task)
@@ -99,10 +99,10 @@ async def update_task(
     progress: int | None = None,
     detail: str | None = None,
     error_message: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """更新任务状态（供内部调用）。"""
-    task = db.get(GenerationTask, task_id)
+    task = await db.get(GenerationTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
@@ -119,15 +119,15 @@ async def update_task(
     if error_message:
         task.error_message = error_message
 
-    db.commit()
-    db.refresh(task)
+    await db.commit()
+    await db.refresh(task)
     return _task_to_response(task)
 
 
 @router.delete("/{task_id}", response_model=MessageResponse)
-async def cancel_task(task_id: str, db: Session = Depends(get_db)):
+async def cancel_task(task_id: str, db: AsyncSession = Depends(get_db)):
     """取消任务。"""
-    task = db.get(GenerationTask, task_id)
+    task = await db.get(GenerationTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
@@ -137,7 +137,7 @@ async def cancel_task(task_id: str, db: Session = Depends(get_db)):
     task.status = "cancelled"
     task.completed_at = datetime.now()
     task.detail = "用户手动取消"
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"任务已取消")
 
 
@@ -145,7 +145,7 @@ async def cancel_task(task_id: str, db: Session = Depends(get_db)):
 async def clear_tasks(
     project_id: str | None = None,
     status: str | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """清空任务记录。"""
     query = select(GenerationTask)
@@ -154,10 +154,10 @@ async def clear_tasks(
     if status:
         query = query.where(GenerationTask.status == status)
 
-    tasks = db.execute(query).scalars().all()
+    tasks = await db.execute(query).scalars().all()
     for task in tasks:
-        db.delete(task)
-    db.commit()
+        await db.delete(task)
+    await db.commit()
 
     return MessageResponse(message=f"已清空 {len(tasks)} 条任务记录")
 

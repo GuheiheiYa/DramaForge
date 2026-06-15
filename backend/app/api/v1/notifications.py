@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 
 from app.database import get_db
@@ -24,7 +24,7 @@ async def list_notifications(
     is_read: bool | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取通知列表，支持筛选和分页。"""
     query = select(Notification).where(Notification.user_id == user_id)
@@ -34,18 +34,18 @@ async def list_notifications(
 
     # 统计总数和未读数
     count_query = select(Notification).where(Notification.user_id == user_id)
-    total = len(db.execute(count_query).scalars().all())
+    total = len(await db.execute(count_query).scalars().all())
 
     unread_query = select(Notification).where(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    unread_count = len(db.execute(unread_query).scalars().all())
+    unread_count = len(await db.execute(unread_query).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(Notification.created_at))
     query = query.offset((page - 1) * page_size).limit(page_size)
-    result = db.execute(query)
+    result = await db.execute(query)
     notifications = result.scalars().all()
 
     return {
@@ -60,21 +60,21 @@ async def list_notifications(
 @router.get("/unread-count")
 async def get_unread_count(
     user_id: str = "default",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """获取未读通知数量。"""
     query = select(Notification).where(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    count = len(db.execute(query).scalars().all())
+    count = len(await db.execute(query).scalars().all())
     return {"unread_count": count}
 
 
 @router.post("", response_model=NotificationResponse)
 async def create_notification(
     data: NotificationCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """创建通知。"""
     notification = Notification(
@@ -84,58 +84,58 @@ async def create_notification(
         type=data.type or "info",
         link=data.link or "",
     )
-    db.add(notification)
-    db.commit()
-    db.refresh(notification)
+    await db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
     return _notification_to_response(notification)
 
 
 @router.put("/{notification_id}/read", response_model=MessageResponse)
 async def mark_as_read(
     notification_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """标记通知为已读。"""
-    notification = db.get(Notification, notification_id)
+    notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=404, detail="通知不存在")
 
     notification.is_read = True
-    db.commit()
+    await db.commit()
     return MessageResponse(message="已标记为已读")
 
 
 @router.put("/read-all", response_model=MessageResponse)
 async def mark_all_as_read(
     user_id: str = "default",
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """标记所有通知为已读。"""
     query = select(Notification).where(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    notifications = db.execute(query).scalars().all()
+    notifications = await db.execute(query).scalars().all()
 
     for notification in notifications:
         notification.is_read = True
 
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"已标记 {len(notifications)} 条通知为已读")
 
 
 @router.delete("/{notification_id}", response_model=MessageResponse)
 async def delete_notification(
     notification_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """删除通知。"""
-    notification = db.get(Notification, notification_id)
+    notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=404, detail="通知不存在")
 
-    db.delete(notification)
-    db.commit()
+    await db.delete(notification)
+    await db.commit()
     return MessageResponse(message="通知已删除")
 
 
@@ -143,18 +143,18 @@ async def delete_notification(
 async def clear_notifications(
     user_id: str = "default",
     is_read: bool | None = None,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """清空通知。"""
     query = select(Notification).where(Notification.user_id == user_id)
     if is_read is not None:
         query = query.where(Notification.is_read == is_read)
 
-    notifications = db.execute(query).scalars().all()
+    notifications = await db.execute(query).scalars().all()
     for notification in notifications:
-        db.delete(notification)
+        await db.delete(notification)
 
-    db.commit()
+    await db.commit()
     return MessageResponse(message=f"已清空 {len(notifications)} 条通知")
 
 

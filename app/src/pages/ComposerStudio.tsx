@@ -7,6 +7,7 @@ import MultiTrackTimeline from './composer/MultiTrackTimeline';
 import SubtitleEditor from './composer/SubtitleEditor';
 import PlaybackControls from './composer/PlaybackControls';
 import ExportPanel from './composer/ExportPanel';
+import ProjectSelector from '@/components/ProjectSelector';
 import {
   mockVideoClips,
   mockAudioClips,
@@ -213,7 +214,7 @@ export default function ComposerStudio() {
             <nav className="flex items-center text-[13px]">
               <button onClick={() => navigate('/')} className="text-[#A8A39E] hover:text-[#6E6862] transition-colors">首页</button>
               <span className="mx-1.5 text-[#C5C1BC]">/</span>
-              <button onClick={() => navigate('/')} className="text-[#6E6862] hover:text-[#524D48] transition-colors">《樱花下的约定》</button>
+              <ProjectSelector />
               <span className="mx-1.5 text-[#C5C1BC]">/</span>
               <span className="text-[#524D48] font-medium">成片合成室</span>
             </nav>

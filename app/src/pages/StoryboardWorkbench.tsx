@@ -11,6 +11,7 @@ import { mockShots, getTotalDuration } from './storyboard/mockData';
 import type { Shot, ShotFilter, ViewMode } from './storyboard/types';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
+import ProjectSelector from '@/components/ProjectSelector';
 import {
   getShots as apiGetShots,
   createShot as apiCreateShot,
@@ -368,7 +369,7 @@ export default function StoryboardWorkbench() {
             <nav className="flex items-center text-[13px]">
               <button onClick={() => navigate('/')} className="text-[#A8A39E] hover:text-[#6E6862] transition-colors">首页</button>
               <span className="mx-1.5 text-[#C5C1BC]">/</span>
-              <button onClick={() => navigate('/')} className="text-[#6E6862] hover:text-[#524D48] transition-colors">《樱花下的约定》</button>
+              <ProjectSelector />
               <span className="mx-1.5 text-[#C5C1BC]">/</span>
               <span className="text-[#524D48] font-medium">分镜工作台</span>
             </nav>
