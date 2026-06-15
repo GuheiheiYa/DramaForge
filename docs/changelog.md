@@ -1,5 +1,18 @@
 # 更新日志
 
+## 2026-06-15 13:00:00 — AI 入口接入真实生成
+
+**需求**: [R-041]~[R-043]
+**修改文件**:
+- `app/src/pages/script/AIScriptPanel.tsx` — handleSend/handleQuickAction 改为调用 SSE 流式接口
+- `app/src/pages/CharacterManager.tsx` — 新增 handleAIGenerate + AI 生成角色按钮
+- `app/src/pages/StoryboardWorkbench.tsx` — 新增 handleAIGenerateShot + AI 生成分镜按钮
+
+**变更摘要**:
+- AIScriptPanel 发送消息时调用 `/pipeline/chat/stream` SSE 接口，实时显示 AI 回复
+- CharacterManager 点击"AI 生成角色"→ AI 返回 JSON → 解析并保存到数据库
+- StoryboardWorkbench 点击"AI 生成分镜"→ AI 返回 JSON 数组 → 批量创建分镜
+
 ## 2026-06-15 12:35:00 — 项目上下文贯穿 + Chat 项目绑定
 
 **需求**: [R-031]~[R-040]
