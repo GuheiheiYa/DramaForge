@@ -207,6 +207,46 @@ skills (全局，不关联项目)
 
 ---
 
+## 实施计划 [R-031 ~ R-050]
+
+### 阶段1：项目上下文贯穿 [R-031 ~ R-036]
+
+| ID | 需求描述 | 优先级 | 状态 | 依赖 | 验收标准 |
+|----|---------|--------|------|------|---------|
+| R-031 | selectedProjectId 持久化到 localStorage | P0 | ⏳ | — | 刷新页面后 selectedProjectId 不丢失 |
+| R-032 | Dashboard 对接 getProjects API | P0 | ⏳ | — | 页面显示数据库中的项目，不是 mock |
+| R-033 | Dashboard 对接 createProject API | P0 | ⏳ | R-032 | 创建后数据库有记录，返回真实 UUID |
+| R-034 | CharacterManager 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 | 只加载当前项目的角色 |
+| R-035 | ScriptEditor 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 | 只加载当前项目的剧本 |
+| R-036 | StoryboardWorkbench 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 | 只加载当前项目的分镜 |
+
+### 阶段2：Chat 项目绑定 [R-037 ~ R-040]
+
+| ID | 需求描述 | 优先级 | 状态 | 依赖 | 验收标准 |
+|----|---------|--------|------|------|---------|
+| R-037 | Chat 顶部添加项目下拉选择器 | P0 | ⏳ | R-032 | 能看到所有项目，能切换 |
+| R-038 | 选择「新建项目」弹出创建对话框 | P0 | ⏳ | R-037 | 创建后自动选中新项目 |
+| R-039 | Pipeline savePipelineScript 使用真实 project_id | P0 | ⏳ | R-037 | 数据库里剧本关联到正确项目 |
+| R-040 | Pipeline savePipelineCharacters 使用真实 project_id | P0 | ⏳ | R-037 | 数据库里角色关联到正确项目 |
+
+### 阶段3：AI 入口 [R-041 ~ R-043]
+
+| ID | 需求描述 | 优先级 | 状态 | 依赖 | 验收标准 |
+|----|---------|--------|------|------|---------|
+| R-041 | ScriptEditor AI 面板接入真实 AI 生成 | P0 | ⏳ | R-035 | 点击生成 → AI 返回内容 → 填入编辑器 |
+| R-042 | CharacterManager 添加「AI 生成角色」按钮 | P0 | ⏳ | R-034 | 点击 → AI 返回角色 → 保存到数据库 |
+| R-043 | StoryboardWorkbench 添加「AI 生成分镜」按钮 | P0 | ⏳ | R-036 | 点击 → AI 返回分镜 → 保存到数据库 |
+
+### 阶段4：外部 API [R-044 ~ R-046]
+
+| ID | 需求描述 | 优先级 | 状态 | 依赖 | 验收标准 |
+|----|---------|--------|------|------|---------|
+| R-044 | 即梦AI 图像生成接入 | P0 | ⏳ | 需要 API Key | 角色立绘/分镜图真实生成 |
+| R-045 | 火山引擎 TTS 配音接入 | P1 | ⏳ | 需要 API Key | 角色配音真实生成 |
+| R-046 | Celery 异步任务队列 | P0 | ⏳ | 需要 Redis | Pipeline 后台执行，前端实时进度 |
+
+---
+
 ## 功能状态详情
 
 ### 已完成 ✅
