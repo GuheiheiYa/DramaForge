@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.db_models import Skill, SkillParameter, SkillReview
@@ -18,14 +19,14 @@ async def list_skills(
     db: AsyncSession = Depends(get_db),
 ):
     """获取 SKILL 列表，支持按分类和风格筛选。"""
-    query = select(Skill)
+    query = select(Skill).options(selectinload(Skill.parameters), selectinload(Skill.reviews))
     if category:
         query = query.where(Skill.category == category)
     if style:
         query = query.where(Skill.style == style)
     query = query.order_by(Skill.download_count.desc())
     result = await db.execute(query)
-    skills = result.scalars().all()
+    skills = result.scalars().unique().all()
     return [_skill_to_response(s) for s in skills]
 
 
