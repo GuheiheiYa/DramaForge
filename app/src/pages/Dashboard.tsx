@@ -15,6 +15,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAppStore, type ProjectType, type Project } from '@/store/useAppStore';
+import { apiGetProjects, apiCreateProject, apiDeleteProject } from '@/lib/api';
 import ProjectCard from '@/components/ProjectCard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { toast } from '@/hooks/useToast';
@@ -111,29 +112,37 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim()) return;
     setCreating(true);
 
-    // Simulate creation delay
-    setTimeout(() => {
-      const newProject: Project = {
-        id: Date.now().toString(),
+    try {
+      const created = await apiCreateProject({
         name: name.trim(),
         type,
+        description: description.trim() || undefined,
+        episodes,
+      });
+      const newProject: Project = {
+        id: created.id,
+        name: created.name,
+        type: (created.type as ProjectType) || type,
         status: '草稿',
         progress: 0,
         currentEpisode: 1,
-        totalEpisodes: episodes,
+        totalEpisodes: created.total_episodes || episodes,
         lastEdited: '刚刚',
         thumbnail: type === '漫剧' ? '/project-placeholder-1.jpg' : '/project-placeholder-2.jpg',
         skillName: skills.find((s) => s.id === selectedSkill)?.name,
       };
       addProject(newProject);
       toast.success(`项目「${newProject.name}」创建成功`);
-      setCreating(false);
       onClose();
-    }, 1200);
+    } catch (err) {
+      toast.error('创建项目失败');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const selectedSkillData = skills.find((s) => s.id === selectedSkill);
@@ -498,6 +507,7 @@ function SortDropdown({ value, onChange }: { value: SortOption; onChange: (v: So
    ═══════════════════════════════════════════════════ */
 export default function Dashboard() {
   const projects = useAppStore((s) => s.projects);
+  const addProject = useAppStore((s) => s.addProject);
   const removeProject = useAppStore((s) => s.removeProject);
   const setSelectedProject = useAppStore((s) => s.setSelectedProject);
   const navigate = useNavigate();
@@ -507,6 +517,41 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortOption, setSortOption] = useState<SortOption>('最近编辑');
   const [showNewProject, setShowNewProject] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  /* ─── 从后端 API 加载项目列表 ─── */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const data = await apiGetProjects();
+        if (cancelled) return;
+        // 清空 store 中的 mock 数据，替换为 API 数据
+        const apiProjects: Project[] = data.map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          name: p.name as string,
+          type: ((p.type as string) || '漫剧') as ProjectType,
+          status: '草稿',
+          progress: 0,
+          currentEpisode: 1,
+          totalEpisodes: (p.episodes as number) || 8,
+          lastEdited: p.updated_at
+            ? new Date(p.updated_at as string).toLocaleDateString('zh-CN')
+            : '未知',
+          thumbnail: (p.type as string) === '短剧' ? '/project-placeholder-2.jpg' : '/project-placeholder-1.jpg',
+        }));
+        // 批量替换 store 中的 projects
+        useAppStore.setState({ projects: apiProjects });
+      } catch {
+        // API 不可用时保留 mock 数据
+        console.warn('加载项目列表失败，使用本地 mock 数据');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   /* Confirm dialog state */
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -597,11 +642,17 @@ export default function Dashboard() {
     setConfirmOpen(true);
   }, []);
 
-  const confirmDelete = useCallback(() => {
+  const confirmDelete = useCallback(async () => {
     if (confirmProjectId) {
-      removeProject(confirmProjectId);
-      toast.success('项目已删除');
-      setConfirmProjectId(null);
+      try {
+        await apiDeleteProject(confirmProjectId);
+        removeProject(confirmProjectId);
+        toast.success('项目已删除');
+      } catch {
+        toast.error('删除项目失败');
+      } finally {
+        setConfirmProjectId(null);
+      }
     }
   }, [confirmProjectId, removeProject]);
 
