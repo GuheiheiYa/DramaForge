@@ -7,6 +7,7 @@ import ScriptEditorArea from './script/ScriptEditorArea';
 import AIScriptPanel from './script/AIScriptPanel';
 import { episodes as initialEpisodes, getBlocksForEpisode, projectTitle as mockTitle } from './script/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
+import { useAppStore } from '@/store/useAppStore';
 import type { ScriptBlock, Episode } from './script/types';
 import { getScripts, updateScript, type ScriptData, type EpisodeData } from '@/lib/api';
 
@@ -52,6 +53,7 @@ function toFrontendBlocks(script: ScriptData, episodeId: string): ScriptBlock[] 
 }
 
 export default function ScriptEditor() {
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -65,9 +67,9 @@ export default function ScriptEditor() {
   const [currentEpisodeId, setCurrentEpisodeId] = useState(initialEpisodes[0]?.id || '');
   const { success, info } = useToast();
 
-  // 从后端加载剧本数据
+  // 从后端加载剧本数据（按项目过滤）
   useEffect(() => {
-    getScripts()
+    getScripts(selectedProjectId || undefined)
       .then((scripts) => {
         if (scripts.length > 0) {
           const script = scripts[0];
@@ -84,7 +86,7 @@ export default function ScriptEditor() {
       .catch((err) => {
         console.error('[ScriptEditor] 加载失败，使用 mock 数据:', err);
       });
-  }, []);
+  }, [selectedProjectId]);
 
   // History for undo/redo
   const [history, setHistory] = useState<ScriptBlock[][]>([]);

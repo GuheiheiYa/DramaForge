@@ -102,9 +102,9 @@
 | R-031 | selectedProjectId 持久化到 localStorage | P0 | ✅ | — |
 | R-032 | Dashboard 对接 getProjects API | P0 | ✅ | — |
 | R-033 | Dashboard 对接 createProject API | P0 | ✅ | R-032 |
-| R-034 | CharacterManager 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 |
-| R-035 | ScriptEditor 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 |
-| R-036 | StoryboardWorkbench 读取 selectedProjectId 过滤数据 | P0 | ⏳ | R-031 |
+| R-034 | CharacterManager 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
+| R-035 | ScriptEditor 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
+| R-036 | StoryboardWorkbench 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
 
 ### 阶段2：Chat 项目绑定 [R-037 ~ R-040]
 

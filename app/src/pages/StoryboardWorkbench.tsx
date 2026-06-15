@@ -10,6 +10,7 @@ import Toolbar from './storyboard/Toolbar';
 import { mockShots, getTotalDuration } from './storyboard/mockData';
 import type { Shot, ShotFilter, ViewMode } from './storyboard/types';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
+import { useAppStore } from '@/store/useAppStore';
 import {
   getShots as apiGetShots,
   createShot as apiCreateShot,
@@ -58,6 +59,7 @@ function toApiShot(s: Shot, projectId: string = 'default') {
 
 export default function StoryboardWorkbench() {
   const navigate = useNavigate();
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const [shots, setShots] = useState<Shot[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
@@ -69,9 +71,9 @@ export default function StoryboardWorkbench() {
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
 
-  // 从后端加载分镜数据
+  // 从后端加载分镜数据（按项目过滤）
   useEffect(() => {
-    apiGetShots()
+    apiGetShots(selectedProjectId || undefined)
       .then((data) => {
         const frontendShots = data.map(toFrontendShot);
         setShots(frontendShots);
@@ -84,7 +86,7 @@ export default function StoryboardWorkbench() {
         if (mockShots.length > 0) setSelectedShotId(mockShots[0].id);
         setLoading(false);
       });
-  }, []);
+  }, [selectedProjectId]);
 
   const selectedShot = useMemo(
     () => shots.find((s) => s.id === selectedShotId) ?? null,
@@ -152,7 +154,7 @@ export default function StoryboardWorkbench() {
 
   const handleDuplicateShot = useCallback((shot: Shot) => {
     const newShotData = {
-      ...toApiShot(shot),
+      ...toApiShot(shot, selectedProjectId || 'default'),
       shot_number: shot.shotNumber + 1,
       status: '草稿',
     };
@@ -179,10 +181,11 @@ export default function StoryboardWorkbench() {
         });
         toastSuccess('分镜已复制');
       });
-  }, []);
+  }, [selectedProjectId]);
 
   const handleAddShot = useCallback(() => {
     const newShotData = {
+      project_id: selectedProjectId || 'default',
       shot_number: shots.length + 1,
       shot_type: '中景',
       duration: 5,
@@ -225,7 +228,7 @@ export default function StoryboardWorkbench() {
         setSelectedShotId(fallbackShot.id);
         toastSuccess('新分镜已添加');
       });
-  }, [shots.length]);
+  }, [shots.length, selectedProjectId]);
 
   const handleBatchGenerate = useCallback((ids: string[]) => {
     setGenerating(true);

@@ -7,6 +7,7 @@ import CharacterDetailDrawer from './character/CharacterDetailDrawer';
 import type { Character } from './character/types';
 import { mockCharacters } from './character/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
+import { useAppStore } from '@/store/useAppStore';
 import {
   getCharacters as apiGetCharacters,
   createCharacter as apiCreateCharacter,
@@ -63,6 +64,7 @@ function toApiChar(c: Character, projectId: string = 'default') {
 }
 
 export default function CharacterManager() {
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -70,9 +72,9 @@ export default function CharacterManager() {
   const [detailCharacter, setDetailCharacter] = useState<Character | null>(null);
   const { success } = useToast();
 
-  // 从后端加载角色列表
+  // 从后端加载角色列表（按项目过滤）
   useEffect(() => {
-    apiGetCharacters()
+    apiGetCharacters(selectedProjectId || undefined)
       .then((data) => {
         setCharacters(data.map(toFrontendChar));
         setLoading(false);
@@ -82,7 +84,7 @@ export default function CharacterManager() {
         setCharacters(mockCharacters);
         setLoading(false);
       });
-  }, []);
+  }, [selectedProjectId]);
 
   // Stats computed from character data
   const stats = useMemo(() => {
@@ -127,8 +129,8 @@ export default function CharacterManager() {
   const handleSave = useCallback((character: Character) => {
     const exists = characters.find((c) => c.id === character.id);
     const apiCall = exists
-      ? apiUpdateCharacter(character.id, toApiChar(character))
-      : apiCreateCharacter(toApiChar(character));
+      ? apiUpdateCharacter(character.id, toApiChar(character, selectedProjectId || 'default'))
+      : apiCreateCharacter(toApiChar(character, selectedProjectId || 'default'));
 
     apiCall
       .then((saved) => {
@@ -158,7 +160,7 @@ export default function CharacterManager() {
         });
         success(editingCharacter ? MSG.updated : MSG.characterSaved);
       });
-  }, [characters, editingCharacter, success]);
+  }, [characters, editingCharacter, success, selectedProjectId]);
 
   const handleOpenDetail = useCallback((character: Character) => {
     setDetailCharacter(character);
