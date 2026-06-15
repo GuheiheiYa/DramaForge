@@ -84,6 +84,7 @@ DramaForge/
 │   ├── design/                   # 功能级设计方案
 │   │   └── chat-studio-design.md # [D-001] Chat Studio 设计
 │   ├── navigation.md             # 项目导航（本文件）
+│   ├── data-model.md             # 数据模型（12 张表 + 关联关系）
 │   ├── changelog.md              # 更新日志
 │   └── git-commits.md            # Git 提交索引
 ├── info.md                       # 技术调研报告
