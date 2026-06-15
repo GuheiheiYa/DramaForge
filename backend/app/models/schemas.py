@@ -433,3 +433,65 @@ class AssetListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ─── 成本统计 ───
+
+class CostRecordCreate(BaseModel):
+    """创建成本记录请求。"""
+    project_id: str = Field(..., description="项目 ID")
+    service: str = Field(..., description="服务名称")
+    task_id: str = Field(default="", description="关联任务 ID")
+    amount: float = Field(..., ge=0, description="费用(元)")
+    usage: str = Field(default="", description="用量描述")
+    usage_value: float = Field(default=0, ge=0, description="用量数值")
+    usage_unit: str = Field(default="", description="用量单位")
+
+
+class CostRecordResponse(BaseModel):
+    """成本记录响应。"""
+    id: str
+    project_id: str
+    service: str
+    task_id: str = ""
+    amount: float
+    usage: str = ""
+    usage_value: float = 0
+    usage_unit: str = ""
+    created_at: str | None = None
+
+
+class CostServiceSummary(BaseModel):
+    """服务成本汇总。"""
+    service: str
+    label: str
+    amount: float
+    color: str
+    usage: str = ""
+
+
+class CostProjectBreakdown(BaseModel):
+    """项目成本明细。"""
+    service: str
+    label: str
+    amount: float
+    color: str
+    usage: str = ""
+
+
+class CostProjectSummary(BaseModel):
+    """项目成本汇总。"""
+    project_id: str
+    project_name: str
+    total: float
+    episodes: int
+    cost_per_episode: float
+    breakdown: list[CostProjectBreakdown]
+
+
+class CostOverallSummary(BaseModel):
+    """成本统计总览。"""
+    total_cost: float
+    project_count: int
+    service_summaries: list[CostServiceSummary]
+    project_summaries: list[CostProjectSummary]

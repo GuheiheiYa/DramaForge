@@ -657,3 +657,88 @@ export const batchDeleteAssets = (assetIds: string[]) =>
     method: 'DELETE',
     body: JSON.stringify(assetIds),
   });
+
+// ─── Cost API ───
+
+export interface CostServiceSummaryData {
+  service: string;
+  label: string;
+  amount: number;
+  color: string;
+  usage: string;
+}
+
+export interface CostProjectBreakdownData {
+  service: string;
+  label: string;
+  amount: number;
+  color: string;
+  usage: string;
+}
+
+export interface CostProjectSummaryData {
+  project_id: string;
+  project_name: string;
+  total: number;
+  episodes: number;
+  cost_per_episode: number;
+  breakdown: CostProjectBreakdownData[];
+}
+
+export interface CostOverallSummaryData {
+  total_cost: number;
+  project_count: number;
+  service_summaries: CostServiceSummaryData[];
+  project_summaries: CostProjectSummaryData[];
+}
+
+export const getCostSummary = (params?: {
+  project_id?: string;
+  days?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.days) qs.set('days', params.days.toString());
+  const query = qs.toString();
+  return request<CostOverallSummaryData>(`/costs/summary${query ? '?' + query : ''}`);
+};
+
+export interface CostRecordData {
+  id: string;
+  project_id: string;
+  service: string;
+  task_id: string;
+  amount: number;
+  usage: string;
+  usage_value: number;
+  usage_unit: string;
+  created_at: string | null;
+}
+
+export const createCostRecord = (data: {
+  project_id: string;
+  service: string;
+  task_id?: string;
+  amount: number;
+  usage?: string;
+  usage_value?: number;
+  usage_unit?: string;
+}) => request<CostRecordData>('/costs', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const getCostRecords = (params?: {
+  project_id?: string;
+  service?: string;
+  page?: number;
+  page_size?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.service) qs.set('service', params.service);
+  if (params?.page) qs.set('page', params.page.toString());
+  if (params?.page_size) qs.set('page_size', params.page_size.toString());
+  const query = qs.toString();
+  return request<CostRecordData[]>(`/costs${query ? '?' + query : ''}`);
+};

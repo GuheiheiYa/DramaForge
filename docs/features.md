@@ -178,15 +178,28 @@
 
 ## [F-009] 成本统计 ← [R-009]
 
-**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-15 16:30:00
 
 **实现方式**:
 - 项目级费用卡片 + 服务级费用构成饼图
 - 按项目切换查看费用明细
 - 用量和占比表格
+- **已对接后端 API**：`getCostSummary()` 从数据库加载，支持按时间范围和项目筛选
+- 统计总览包含总费用、项目数、服务汇总、项目汇总
 
 **关联文件**:
-- `src/pages/CostStatistics.tsx`
+- `app/src/pages/CostStatistics.tsx` — 对接后端 API，移除 mock 数据
+- `app/src/lib/api.ts` — 新增 Cost API 函数（getCostSummary/getCostRecords）
+- `backend/app/api/v1/costs.py` — 新增成本统计路由，支持按项目/服务/时间统计
+- `backend/app/models/db_models.py` — 新增 CostRecord 表
+- `backend/app/models/schemas.py` — 新增 CostRecordCreate/Response/Summary schema
+
+**数据来源**:
+- 后端 `/api/v1/costs` API（SQLite 数据库）
+
+**已知问题**:
+- 成本数据需要手动记录（当前无自动计费逻辑）
+- 服务用量单位需要统一（tokens/张/秒/字/首）
 
 ---
 

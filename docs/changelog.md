@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-15 16:30:00 — 成本统计对接数据库
+
+**需求**: [R-009]
+**修改文件**:
+- `backend/app/models/db_models.py` — 新增 CostRecord 表
+- `backend/app/api/v1/costs.py` — 新增成本统计路由，支持按项目/服务/时间统计
+- `backend/app/models/schemas.py` — 新增 CostRecordCreate/Response/Summary schema
+- `backend/app/main.py` — 注册 costs 路由
+- `app/src/lib/api.ts` — 新增 Cost API 函数（getCostSummary/getCostRecords）
+- `app/src/pages/CostStatistics.tsx` — 对接后端 API，移除 mock 数据
+
+**变更摘要**:
+- 后端新增 CostRecord 数据库表，记录每次 AI 服务调用的费用
+- costs.py 支持按项目/服务/时间范围统计，返回总览、服务汇总、项目汇总
+- 前端 CostStatistics.tsx 使用 `useEffect` 从后端加载数据
+- 统计卡片显示总费用、平均单集成本、最高成本项目
+- 项目消耗列表和费用构成饼图使用后端数据
+
 ## 2026-06-15 16:00:00 — 素材库对接数据库 + 文件上传
 
 **需求**: [R-007]

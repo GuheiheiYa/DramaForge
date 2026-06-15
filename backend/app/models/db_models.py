@@ -280,3 +280,21 @@ class Asset(Base):
 
     # 关联
     project = relationship("Project", backref="assets")
+
+
+class CostRecord(Base):
+    """成本记录表 — 记录每次 AI 服务调用的费用。"""
+    __tablename__ = "cost_records"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    service = Column(String(50), nullable=False, comment="服务名称: deepseek/jimeng/seedance/kling/volc_tts/suno/mubert/other")
+    task_id = Column(String(32), default="", comment="关联的生成任务 ID")
+    amount = Column(Float, default=0, comment="费用(元)")
+    usage = Column(String(100), default="", comment="用量描述")
+    usage_value = Column(Float, default=0, comment="用量数值")
+    usage_unit = Column(String(20), default="", comment="用量单位: tokens/张/秒/字/首")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    # 关联
+    project = relationship("Project", backref="cost_records")
