@@ -136,8 +136,12 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
         skillName: skills.find((s) => s.id === selectedSkill)?.name,
       };
       addProject(newProject);
+      // 自动选中新创建的项目并跳转到剧本编辑器
+      useAppStore.getState().setSelectedProject(created.id);
       toast.success(`项目「${newProject.name}」创建成功`);
       onClose();
+      // 跳转到剧本编辑器
+      navigate('/script');
     } catch (err) {
       toast.error('创建项目失败');
     } finally {

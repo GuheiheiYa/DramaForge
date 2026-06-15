@@ -114,10 +114,10 @@
 
 | ID | 需求描述 | 优先级 | 状态 | 依赖 |
 |----|---------|--------|------|------|
-| R-037 | Chat 顶部添加项目下拉选择器 | P0 | ⏳ | R-032 |
-| R-038 | 选择「新建项目」弹出创建对话框 | P0 | ⏳ | R-037 |
-| R-039 | Pipeline savePipelineScript 使用真实 project_id | P0 | ⏳ | R-037 |
-| R-040 | Pipeline savePipelineCharacters 使用真实 project_id | P0 | ⏳ | R-037 |
+| R-037 | Chat 顶部添加项目下拉选择器 | P0 | ✅ | R-032 |
+| R-038 | 选择「新建项目」弹出创建对话框 | P0 | ✅ | R-037 |
+| R-039 | Pipeline savePipelineScript 使用真实 project_id | P0 | ✅ | R-037 |
+| R-040 | Pipeline savePipelineCharacters 使用真实 project_id | P0 | ✅ | R-037 |
 
 ### 阶段3：AI 入口 [R-041 ~ R-043]
 

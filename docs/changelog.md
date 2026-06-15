@@ -1,5 +1,18 @@
 # 更新日志
 
+## 2026-06-15 14:30:00 — 项目创建流程修复
+
+**需求**: [R-031]~[R-040]
+**修改文件**:
+- `app/src/pages/Dashboard.tsx` — 创建项目后自动选中新项目并跳转到剧本编辑器
+- `app/src/pages/Chat.tsx` — Pipeline 启动时自动创建项目（如果未选中项目）
+- `docs/requirements.md` — 修复阶段2需求状态不一致（统一标记为 ✅）
+
+**变更摘要**:
+- 路线 B（Dashboard）：创建项目后自动调用 `setSelectedProject` 选中新项目，并跳转到 `/script` 剧本编辑器
+- 路线 A（Chat）：启动 Pipeline 时检查 `selectedProjectId`，如果为 null 则自动创建新项目
+- 修复 requirements.md 中阶段2（R-037~R-040）状态不一致问题
+
 ## 2026-06-15 13:00:00 — AI 入口接入真实生成
 
 **需求**: [R-041]~[R-043]

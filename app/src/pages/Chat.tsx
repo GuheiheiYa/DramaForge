@@ -870,9 +870,40 @@ export default function Chat() {
   const extractedCharacters = useChatStore((s) => s.extractedCharacters);
   const extractedTitle = useChatStore((s) => s.extractedTitle);
 
-  const handleModeSelect = (mode: PipelineMode) => {
+  const handleModeSelect = async (mode: PipelineMode) => {
     // 使用从 AI 回复中提取的标题，而非硬编码
     const title = extractedTitle || '创作项目';
+
+    // 如果没有选中项目，先创建一个新项目
+    let projectId = useAppStore.getState().selectedProjectId;
+    if (!projectId) {
+      try {
+        const created = await apiCreateProject({
+          name: title,
+          type: '漫剧',
+          description: 'AI 生成的项目',
+        });
+        projectId = created.id;
+        useAppStore.getState().setSelectedProject(projectId);
+        useAppStore.getState().addProject({
+          id: created.id,
+          name: created.name,
+          type: '漫剧',
+          status: '草稿',
+          progress: 0,
+          currentEpisode: 1,
+          totalEpisodes: created.episodes || 8,
+          lastEdited: '刚刚',
+          thumbnail: '/project-placeholder-1.jpg',
+        });
+        console.log('[Pipeline] 已创建新项目:', projectId);
+      } catch (err) {
+        console.error('[Pipeline] 创建项目失败:', err);
+        toastInfo('创建项目失败，请先在 Dashboard 创建项目');
+        return;
+      }
+    }
+
     startPipeline(title, mode);
     toastSuccess(`已启动「${mode === 'auto' ? '全自动' : mode === 'confirm' ? '每步确认' : '仅预览'}」模式`);
     // 模拟 Pipeline 进度 — 使用从 AI 回复提取的数据
