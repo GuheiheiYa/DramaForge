@@ -1,6 +1,38 @@
 # 需求文档
 
-**最后更新**: 2026-06-15 11:00:00
+**最后更新**: 2026-06-15 11:30:00
+
+---
+
+## 两条创建路线
+
+### 路线 A：Agent 驱动（Chat 页面）
+```
+用户输入创意 → AI 生成剧本 → 自动创建项目 → 自动填充剧本/角色/分镜
+→ 用户跳转各页面微调 → AI 辅助修改 → 最终合成
+```
+
+### 路线 B：手动创建（Dashboard）
+```
+用户创建项目 → 跳转剧本编辑器 → 手动/AI 写剧本
+→ 跳转角色管理 → 手动/AI 设计角色
+→ 跳转分镜工作台 → 手动/AI 做分镜
+→ 跳转合成室 → 合成最终视频
+```
+
+---
+
+## 完整步骤流程（7 步）
+
+| 步骤 | 名称 | 涉及表 | 涉及页面 | AI 入口 |
+|------|------|--------|---------|---------|
+| ① | 项目创建 | projects | Dashboard、Chat | Chat 自动创建 |
+| ② | 剧本创作 | scripts→episodes→scenes→script_blocks | ScriptEditor、Chat | AIScriptPanel + Chat |
+| ③ | 角色设计 | characters | CharacterManager、Chat | AI 生成角色 + Chat |
+| ④ | 分镜制作 | storyboard_shots | StoryboardWorkbench、Chat | AI 生成分镜 + Chat |
+| ⑤ | 视频生成 | timeline_clips | ComposerStudio | 需要即梦AI API |
+| ⑥ | 配音生成 | timeline_clips(audio) | ComposerStudio | 需要 TTS API |
+| ⑦ | 合成导出 | timeline_clips + subtitle_segments | ComposerStudio | 需要合成服务 |
 
 ---
 
