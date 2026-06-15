@@ -105,6 +105,10 @@
 | R-034 | CharacterManager 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
 | R-035 | ScriptEditor 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
 | R-036 | StoryboardWorkbench 读取 selectedProjectId 过滤数据 | P0 | ✅ | R-031 |
+| R-037 | Chat 顶部添加项目下拉选择器 | P0 | ✅ | R-032 |
+| R-038 | 选择「新建项目」弹出创建对话框 | P0 | ✅ | R-037 |
+| R-039 | Pipeline savePipelineScript 使用真实 project_id | P0 | ✅ | R-037 |
+| R-040 | Pipeline savePipelineCharacters 使用真实 project_id | P0 | ✅ | R-037 |
 
 ### 阶段2：Chat 项目绑定 [R-037 ~ R-040]
 

@@ -6,7 +6,7 @@ import {
   Send, Plus, Sparkles, Bot, User, Copy, RefreshCw, Check,
   Image as ImageIcon, FileVideo, Paperclip, ChevronDown, Mic,
   X, Eye, Rocket, Hand, EyeOff,
-  Brain, StopCircle, Loader2,
+  Brain, StopCircle, Loader2, FolderOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore, modelOptions, skillOptions, type ChatMessage } from '@/store/useChatStore';
@@ -16,10 +16,11 @@ import {
   type ScriptData, type CharacterData, type StoryboardData,
   type VideoData, type AudioData, type ComposeData,
 } from '@/store/usePipelineStore';
+import { useAppStore, type Project, type ProjectType } from '@/store/useAppStore';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 import ReactMarkdown from 'react-markdown';
-import { savePipelineScript, savePipelineCharacters } from '@/lib/api';
+import { savePipelineScript, savePipelineCharacters, getProjects as apiGetProjects, createProject as apiCreateProject } from '@/lib/api';
 
 // ═══════════════════════════════════════════════════
 // Quick fill hints
@@ -32,6 +33,132 @@ const quickHints = [
   { label: '悬疑推理', text: '帮我做一个悬疑推理短剧，8集，一个密室杀人案的真相揭露' },
   { label: '科幻冒险', text: '帮我做一个科幻冒险漫剧，10集，2077年一个AI觉醒后的冒险旅程' },
 ];
+
+// ═══════════════════════════════════════════════════
+// Project Selector (top bar)
+// ═══════════════════════════════════════════════════
+function ProjectSelector() {
+  const projects = useAppStore((s) => s.projects);
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const setSelectedProject = useAppStore((s) => s.setSelectedProject);
+  const addProject = useAppStore((s) => s.addProject);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 加载项目列表
+  useEffect(() => {
+    apiGetProjects()
+      .then((data) => {
+        const apiProjects: Project[] = data.map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          name: p.name as string,
+          type: ((p.type as string) || '漫剧') as ProjectType,
+          status: '草稿',
+          progress: 0,
+          currentEpisode: 1,
+          totalEpisodes: (p.episodes as number) || 8,
+          lastEdited: '未知',
+          thumbnail: '/project-placeholder-1.jpg',
+        }));
+        useAppStore.setState({ projects: apiProjects });
+      })
+      .catch(() => {/* 保留 mock 数据 */});
+  }, []);
+
+  const handleSelect = (id: string) => {
+    setSelectedProject(id);
+    setOpen(false);
+  };
+
+  const handleCreate = async () => {
+    setLoading(true);
+    try {
+      const created = await apiCreateProject({ name: `新项目 ${projects.length + 1}`, type: '漫剧' });
+      const newProject: Project = {
+        id: created.id,
+        name: created.name,
+        type: '漫剧',
+        status: '草稿',
+        progress: 0,
+        currentEpisode: 1,
+        totalEpisodes: 8,
+        lastEdited: '刚刚',
+        thumbnail: '/project-placeholder-1.jpg',
+      };
+      addProject(newProject);
+      setSelectedProject(created.id);
+      setOpen(false);
+      toastSuccess(`项目「${newProject.name}」已创建`);
+    } catch {
+      toastInfo('创建项目失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="h-7 px-2.5 rounded-md border border-[#DEDBD8] hover:border-[#D9BFA8] text-[11px] text-[#524D48] flex items-center gap-1.5 transition-colors bg-white/80"
+      >
+        <FolderOpen size={13} className="text-[#A8835F]" />
+        <span className="hidden sm:inline max-w-[120px] truncate">
+          {selectedProject ? selectedProject.name : '选择项目'}
+        </span>
+        <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />
+      </button>
+      <AnimatePresence>{open && (
+        <motion.div
+          initial={{ opacity: 0, y: -4, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -4, scale: 0.95 }}
+          transition={{ duration: 0.15 }}
+          className="absolute left-0 top-full mt-1.5 w-56 bg-white rounded-xl shadow-lg border border-[#DEDBD8] py-1.5 z-floating"
+        >
+          <p className="px-3 py-1.5 text-[10px] text-[#A8A39E] uppercase tracking-wider font-medium">当前项目</p>
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => handleSelect(p.id)}
+              className={cn(
+                'w-full px-3 py-2 text-left text-[12px] transition-colors hover:bg-[#F8F7F6]',
+                p.id === selectedProjectId && 'bg-[#FBF7F4]'
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className={cn('font-medium truncate', p.id === selectedProjectId ? 'text-[#755235]' : 'text-[#383431]')}>
+                  {p.name}
+                </span>
+                <span className="text-[10px] text-[#A8A39E]">{p.type}</span>
+              </div>
+            </button>
+          ))}
+          <div className="h-px bg-[#DEDBD8] my-1" />
+          <button
+            onClick={handleCreate}
+            disabled={loading}
+            className="w-full px-3 py-2 text-left text-[12px] text-[#A8835F] hover:bg-[#FBF7F4] transition-colors flex items-center gap-2"
+          >
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+            新建项目
+          </button>
+        </motion.div>
+      )}</AnimatePresence>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════
 // Model & Skill Selector (top bar)
@@ -781,7 +908,7 @@ export default function Chat() {
 
       // 保存剧本到数据库
       try {
-        const projectId = `proj_${Date.now()}`;
+        const projectId = useAppStore.getState().selectedProjectId || `proj_${Date.now()}`;
         await savePipelineScript({
           project_id: projectId,
           title: extractedTitle || '剧本',
@@ -824,7 +951,7 @@ export default function Chat() {
 
       // 保存角色到数据库
       try {
-        await savePipelineCharacters('default', charData.characters.map(c => ({
+        await savePipelineCharacters(useAppStore.getState().selectedProjectId || 'default', charData.characters.map(c => ({
           name: c.name,
           role: c.role,
           description: c.description,
@@ -949,7 +1076,10 @@ export default function Chat() {
             {currentSession && <p className="text-[10px] text-[#A8A39E]">{currentSession.messages.length} 条消息</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2"><ModelSkillBar /></div>
+        <div className="flex items-center gap-2">
+          <ProjectSelector />
+          <ModelSkillBar />
+        </div>
       </div>
 
       {/* Main content: chat + optional panel */}
