@@ -386,3 +386,143 @@ export async function chatStream(
     }
   }
 }
+
+// ─── SKILL API ───
+
+export interface SkillParameterData {
+  id: string;
+  name: string;
+  type: string;
+  value: string;
+  min_val: number;
+  max_val: number;
+  step: number;
+  options: string[];
+  default_value: string;
+}
+
+export interface SkillReviewData {
+  id: string;
+  user_name: string;
+  avatar: string;
+  rating: number;
+  comment: string;
+  date: string;
+}
+
+export interface SkillData {
+  id: string;
+  name: string;
+  description: string;
+  detailed_description: string;
+  category: string;
+  style: string;
+  tags: string[];
+  cover_image: string;
+  version: string;
+  author_name: string;
+  author_avatar: string;
+  download_count: number;
+  rating: number;
+  review_count: number;
+  is_official: boolean;
+  install_status: string;
+  usage_instructions: string;
+  created_at: string | null;
+  updated_at: string | null;
+  parameters: SkillParameterData[];
+  reviews: SkillReviewData[];
+}
+
+export const getSkills = (params?: { category?: string; style?: string }) => {
+  const qs = new URLSearchParams();
+  if (params?.category) qs.set('category', params.category);
+  if (params?.style) qs.set('style', params.style);
+  const query = qs.toString();
+  return request<SkillData[]>(`/skills${query ? '?' + query : ''}`);
+};
+
+export const getSkill = (id: string) => request<SkillData>(`/skills/${id}`);
+
+export const createSkill = (data: {
+  name: string;
+  description?: string;
+  detailed_description?: string;
+  category?: string;
+  style?: string;
+  tags?: string[];
+  cover_image?: string;
+  version?: string;
+  author_name?: string;
+  author_avatar?: string;
+  is_official?: boolean;
+  usage_instructions?: string;
+}) => request<SkillData>('/skills', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const updateSkill = (id: string, data: Partial<{
+  name: string;
+  description: string;
+  detailed_description: string;
+  category: string;
+  style: string;
+  tags: string[];
+  cover_image: string;
+  version: string;
+  author_name: string;
+  author_avatar: string;
+  is_official: boolean;
+  usage_instructions: string;
+}>) => request<SkillData>(`/skills/${id}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
+
+export const deleteSkill = (id: string) => request<{ message: string }>(`/skills/${id}`, {
+  method: 'DELETE',
+});
+
+export const installSkill = (id: string) => request<{ message: string }>(`/skills/${id}/install`, {
+  method: 'POST',
+});
+
+export const uninstallSkill = (id: string) => request<{ message: string }>(`/skills/${id}/uninstall`, {
+  method: 'POST',
+});
+
+export const rateSkill = (id: string, rating: number, comment?: string) =>
+  request<{ message: string }>(`/skills/${id}/rate?rating=${rating}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`, {
+    method: 'POST',
+  });
+
+// ─── Generation API ───
+
+export interface GenerationTaskData {
+  task_id: string;
+  status: string;
+  stage: string;
+  progress: number;
+  detail: string;
+  result: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const submitGenerationTask = (data: {
+  project_id: string;
+  stage: string;
+  skill_id?: string;
+  creative_input?: string;
+}) => request<GenerationTaskData>('/generation/submit', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const getGenerationTask = (taskId: string) =>
+  request<GenerationTaskData>(`/generation/${taskId}`);
+
+export const cancelGenerationTask = (taskId: string) =>
+  request<{ message: string }>(`/generation/${taskId}`, {
+    method: 'DELETE',
+  });

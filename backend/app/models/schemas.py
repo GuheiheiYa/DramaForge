@@ -287,16 +287,84 @@ class GenerationTaskResponse(BaseModel):
 
 # ─── SKILL ───
 
+class SkillParameterData(BaseModel):
+    """SKILL 参数数据。"""
+    id: str = ""
+    name: str
+    type: str = "slider"
+    value: str = ""
+    min_val: float = 0
+    max_val: float = 100
+    step: float = 1
+    options: list[str] = Field(default_factory=list)
+    default_value: str = ""
+
+
+class SkillReviewData(BaseModel):
+    """SKILL 评价数据。"""
+    id: str = ""
+    user_name: str = ""
+    avatar: str = ""
+    rating: int = 5
+    comment: str = ""
+    date: str = ""
+
+
+class SkillCreate(BaseModel):
+    """创建 SKILL 请求。"""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(default="", max_length=500)
+    detailed_description: str = Field(default="")
+    category: str = Field(default="漫剧", description="漫剧/短剧")
+    style: str = Field(default="日系", description="日系/古风/现代/悬疑/甜宠/科幻/喜剧")
+    tags: list[str] = Field(default_factory=list)
+    cover_image: str = Field(default="", max_length=500)
+    version: str = Field(default="v1.0.0", max_length=20)
+    author_name: str = Field(default="", max_length=50)
+    author_avatar: str = Field(default="", max_length=500)
+    is_official: bool = Field(default=False)
+    usage_instructions: str = Field(default="")
+
+
+class SkillUpdate(BaseModel):
+    """更新 SKILL 请求。"""
+    name: str | None = None
+    description: str | None = None
+    detailed_description: str | None = None
+    category: str | None = None
+    style: str | None = None
+    tags: list[str] | None = None
+    cover_image: str | None = None
+    version: str | None = None
+    author_name: str | None = None
+    author_avatar: str | None = None
+    is_official: bool | None = None
+    usage_instructions: str | None = None
+
+
 class SkillResponse(BaseModel):
     """SKILL 响应。"""
     id: str
     name: str
-    type: str
     description: str
-    rating: float
-    review_count: int
-    install_count: int
-    config: dict
+    detailed_description: str = ""
+    category: str = "漫剧"
+    style: str = "日系"
+    tags: list[str] = Field(default_factory=list)
+    cover_image: str = ""
+    version: str = "v1.0.0"
+    author_name: str = ""
+    author_avatar: str = ""
+    download_count: int = 0
+    rating: float = 0.0
+    review_count: int = 0
+    is_official: bool = False
+    install_status: str = "not_installed"
+    usage_instructions: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    parameters: list[SkillParameterData] = Field(default_factory=list)
+    reviews: list[SkillReviewData] = Field(default_factory=list)
 
 
 # ─── 通用 ───

@@ -98,17 +98,27 @@
 
 ## [F-006] SKILL 市场 ← [R-006]
 
-**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-15 15:00:00
 
 **实现方式**:
 - SKILL 卡片网格，支持分类筛选、搜索
 - 安装/卸载、收藏、评分
 - 详情抽屉展示 SKILL 配置参数
+- **已对接后端 API**：`getSkills()` 从数据库加载，`installSkill()` / `uninstallSkill()` / `rateSkill()` 调用后端接口
 
 **关联文件**:
-- `src/pages/SkillMarket.tsx`
-- `src/pages/skill/SkillGrid.tsx`
-- `src/pages/skill/SkillDetailDrawer.tsx`
+- `app/src/pages/SkillMarket.tsx` — 对接后端 API，移除 mock 数据
+- `app/src/pages/skill/SkillGrid.tsx`
+- `app/src/pages/skill/SkillDetailDrawer.tsx`
+- `app/src/lib/api.ts` — 新增 SKILL API 函数
+- `backend/app/api/v1/skills.py` — 对接数据库，支持 CRUD + 安装/卸载/评分
+- `backend/app/models/schemas.py` — 新增 SkillCreate/SkillUpdate/SkillResponse schema
+
+**数据来源**:
+- 后端 `/api/v1/skills` API（SQLite 数据库）
+
+**已知问题**:
+- 筛选功能需要前端组件适配新的参数格式（category/style）
 
 ---
 

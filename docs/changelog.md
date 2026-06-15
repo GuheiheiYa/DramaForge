@@ -1,5 +1,21 @@
 # 更新日志
 
+## 2026-06-15 15:00:00 — SKILL 市场对接数据库
+
+**需求**: [R-006]
+**修改文件**:
+- `backend/app/api/v1/skills.py` — 对接数据库，支持 CRUD + 安装/卸载/评分
+- `backend/app/models/schemas.py` — 新增 SkillCreate/SkillUpdate/SkillResponse schema
+- `app/src/lib/api.ts` — 新增 SKILL API 函数（getSkills/installSkill/uninstallSkill/rateSkill）
+- `app/src/pages/SkillMarket.tsx` — 对接后端 API，移除 mock 数据
+
+**变更摘要**:
+- 后端 skills.py 从 mock 数据改为数据库操作，支持完整 CRUD
+- 新增安装/卸载接口，增加下载次数统计
+- 新增评分接口，自动计算平均评分
+- 前端 SkillMarket.tsx 使用 `useEffect` 从后端加载数据，移除 mock 依赖
+- 安装/卸载/评分操作调用后端 API，支持乐观更新 UI
+
 ## 2026-06-15 14:30:00 — 项目创建流程修复
 
 **需求**: [R-031]~[R-040]
