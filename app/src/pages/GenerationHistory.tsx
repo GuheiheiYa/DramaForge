@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -12,12 +12,20 @@ import {
   Eye,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toastSuccess, toastInfo } from '@/hooks/useToast';
+import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { useAppStore } from '@/store/useAppStore';
+import {
+  getGenerationTasks,
+  cancelGenerationTask,
+  clearGenerationTasks,
+  submitGenerationTask,
+  type GenerationTaskData,
+} from '@/lib/api';
 
 type TaskType = '剧本' | '角色' | '分镜' | '视频' | '配音' | 'BGM' | '合成' | '全部';
-type TaskStatus = '成功' | '失败' | '进行中' | '已取消';
+type TaskStatus = '成功' | '失败' | '进行中' | '已取消' | '等待中';
 
 interface HistoryItem {
   id: string;
@@ -32,20 +40,22 @@ interface HistoryItem {
   detail?: string;
 }
 
-const mockHistory: HistoryItem[] = [
-  { id: 'h1', type: '剧本', status: '成功', progress: 100, projectName: '樱花下的约定', episodeName: '第1集', cost: '¥0.03', duration: '12s', createdAt: '10分钟前' },
-  { id: 'h2', type: '角色', status: '成功', progress: 100, projectName: '樱花下的约定', episodeName: '第1集', cost: '¥1.00', duration: '45s', createdAt: '10分钟前' },
-  { id: 'h3', type: '分镜', status: '成功', progress: 100, projectName: '樱花下的约定', episodeName: '第1集', cost: '¥1.50', duration: '1分20秒', createdAt: '8分钟前' },
-  { id: 'h4', type: '视频', status: '进行中', progress: 65, projectName: '樱花下的约定', episodeName: '第1集', cost: '—', duration: '—', createdAt: '3分钟前', detail: '正在渲染分镜5/12...' },
-  { id: 'h5', type: '配音', status: '等待中', progress: 0, projectName: '樱花下的约定', episodeName: '第1集', cost: '—', duration: '—', createdAt: '3分钟前' },
-  { id: 'h6', type: 'BGM', status: '等待中', progress: 0, projectName: '樱花下的约定', episodeName: '第1集', cost: '—', duration: '—', createdAt: '3分钟前' },
-  { id: 'h7', type: '合成', status: '失败', progress: 30, projectName: '樱花下的约定', episodeName: '第1集', cost: '—', duration: '—', createdAt: '2分钟前', detail: '视频片段拼接超时' },
-  { id: 'h8', type: '剧本', status: '成功', progress: 100, projectName: '都市神医', episodeName: '第3集', cost: '¥0.04', duration: '15s', createdAt: '1小时前' },
-  { id: 'h9', type: '视频', status: '成功', progress: 100, projectName: '都市神医', episodeName: '第2集', cost: '¥12.40', duration: '3分45秒', createdAt: '2小时前' },
-  { id: 'h10', type: '合成', status: '已取消', progress: 0, projectName: '都市神医', episodeName: '第2集', cost: '—', duration: '—', createdAt: '2小时前' },
-  { id: 'h11', type: '角色', status: '成功', progress: 100, projectName: '九霄仙途', episodeName: '第1集', cost: '¥1.00', duration: '50秒', createdAt: '昨天' },
-  { id: 'h12', type: '剧本', status: '失败', progress: 0, projectName: '九霄仙途', episodeName: '第2集', cost: '—', duration: '—', createdAt: '昨天', detail: 'API调用超时，请重试' },
-];
+const stageToType: Record<string, string> = {
+  script: '剧本',
+  character: '角色',
+  storyboard: '分镜',
+  video: '视频',
+  audio: '配音',
+  compose: '合成',
+};
+
+const statusToDisplay: Record<string, TaskStatus> = {
+  queued: '等待中',
+  running: '进行中',
+  completed: '成功',
+  failed: '失败',
+  cancelled: '已取消',
+};
 
 const taskTypeOptions: TaskType[] = ['全部', '剧本', '角色', '分镜', '视频', '配音', 'BGM', '合成'];
 
@@ -53,21 +63,91 @@ const statusConfig: Record<TaskStatus, { icon: React.ReactNode; bg: string; text
   '成功': { icon: <CheckCircle size={14} />, bg: 'bg-[#F0F5F0]', text: 'text-[#5B8C5A]' },
   '失败': { icon: <AlertCircle size={14} />, bg: 'bg-[#FDF2F0]', text: 'text-[#B85C50]' },
   '进行中': { icon: <Loader2 size={14} className="animate-spin" />, bg: 'bg-[#F0F3F7]', text: 'text-[#5A7FA8]' },
+  '等待中': { icon: <Clock size={14} />, bg: 'bg-[#F5EDE6]', text: 'text-[#8E6A48]' },
   '已取消': { icon: <X size={14} />, bg: 'bg-[#EFEDEB]', text: 'text-[#8B847E]' },
 };
 
+/** 后端 GenerationTaskData → 前端 HistoryItem 转换 */
+function toHistoryItem(task: GenerationTaskData, projects: { id: string; name: string }[]): HistoryItem {
+  const project = projects.find((p) => p.id === task.project_id);
+  const status = statusToDisplay[task.status] || '等待中';
+
+  // 计算耗时
+  let duration = '—';
+  if (task.started_at && task.completed_at) {
+    const start = new Date(task.started_at).getTime();
+    const end = new Date(task.completed_at).getTime();
+    const seconds = Math.round((end - start) / 1000);
+    if (seconds < 60) duration = `${seconds}s`;
+    else duration = `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+  } else if (task.started_at && task.status === 'running') {
+    const start = new Date(task.started_at).getTime();
+    const seconds = Math.round((Date.now() - start) / 1000);
+    duration = `${seconds}s`;
+  }
+
+  // 格式化时间
+  let createdAt = '未知';
+  if (task.created_at) {
+    const date = new Date(task.created_at);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHour = Math.floor(diffMs / 3600000);
+    const diffDay = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) createdAt = '刚刚';
+    else if (diffMin < 60) createdAt = `${diffMin}分钟前`;
+    else if (diffHour < 24) createdAt = `${diffHour}小时前`;
+    else if (diffDay < 7) createdAt = `${diffDay}天前`;
+    else createdAt = date.toLocaleDateString('zh-CN');
+  }
+
+  return {
+    id: task.task_id,
+    type: stageToType[task.stage] || task.stage,
+    status,
+    progress: task.progress,
+    projectName: project?.name || '未知项目',
+    episodeName: '—',
+    cost: '—',
+    duration,
+    createdAt,
+    detail: task.error_message || task.detail,
+  };
+}
+
 export default function GenerationHistory() {
-  const [history, setHistory] = useState<HistoryItem[]>(mockHistory);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<TaskType>('全部');
   const [searchQuery, setSearchQuery] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const projects = useAppStore((s) => s.projects);
+
+  // 从后端加载任务列表
+  const loadTasks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getGenerationTasks({ page_size: 100 });
+      setHistory(data.items.map((t) => toHistoryItem(t, projects)));
+    } catch (err) {
+      console.error('[GenerationHistory] 加载失败:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [projects]);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
   const filtered = useMemo(() => {
     let result = [...history];
     if (filterType !== '全部') result = result.filter((h) => h.type === filterType);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter((h) => h.projectName.toLowerCase().includes(q) || h.episodeName.toLowerCase().includes(q));
+      result = result.filter((h) => h.projectName.toLowerCase().includes(q));
     }
     return result;
   }, [history, filterType, searchQuery]);
@@ -76,23 +156,25 @@ export default function GenerationHistory() {
     total: history.length,
     success: history.filter((h) => h.status === '成功').length,
     failed: history.filter((h) => h.status === '失败').length,
-    inProgress: history.filter((h) => h.status === '进行中').length,
+    inProgress: history.filter((h) => h.status === '进行中' || h.status === '等待中').length,
   }), [history]);
 
-  const clearAll = () => {
-    setHistory([]);
-    setShowClearConfirm(false);
-    toastSuccess('已清空所有生成记录');
+  const clearAll = async () => {
+    try {
+      await clearGenerationTasks();
+      setHistory([]);
+      setShowClearConfirm(false);
+      toastSuccess('已清空所有生成记录');
+    } catch (err) {
+      toastError('清空失败');
+    }
   };
 
-  const handleRetry = (id: string) => {
+  const handleRetry = async (id: string) => {
     toastInfo('正在重新提交任务...');
-    setTimeout(() => {
-      setHistory((prev) =>
-        prev.map((h) => h.id === id ? { ...h, status: '进行中' as TaskStatus, progress: 10, detail: '已重新提交' } : h)
-      );
-      toastSuccess('任务已重新提交');
-    }, 1000);
+    // TODO: 重新提交任务需要知道原始参数，暂时只刷新状态
+    await loadTasks();
+    toastSuccess('任务列表已刷新');
   };
 
   return (
@@ -125,7 +207,7 @@ export default function GenerationHistory() {
           <div className="flex items-center gap-3">
             <div className="relative flex-1 max-w-[360px]">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#A8A39E]" />
-              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜索项目或剧集..." className="w-full h-10 pl-9 pr-8 bg-white border border-[#DEDBD8] rounded-lg text-small text-[#383431] placeholder:text-[#C5C1BC] outline-none focus:border-[#D9BFA8] transition-all" />
+              <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜索项目..." className="w-full h-10 pl-9 pr-8 bg-white border border-[#DEDBD8] rounded-lg text-small text-[#383431] placeholder:text-[#C5C1BC] outline-none focus:border-[#D9BFA8] transition-all" />
               {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#A8A39E]"><X size={14} /></button>}
             </div>
             {history.length > 0 && (
@@ -149,93 +231,101 @@ export default function GenerationHistory() {
           </div>
         </motion.div>
 
-        {/* History List */}
-        <AnimatePresence mode="wait">
-          {filtered.length > 0 ? (
-            <motion.div key={filterType} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-xl border border-[#DEDBD8] shadow-sm overflow-hidden">
-              <div className="h-10 flex items-center px-4 bg-[#F8F7F6] border-b border-[#EFEDEB] text-caption text-[#8B847E] font-medium">
-                <span className="w-16 text-center">类型</span>
-                <span className="w-20 text-center">状态</span>
-                <span className="flex-1">项目</span>
-                <span className="w-20 text-center">成本</span>
-                <span className="w-24 text-center">耗时</span>
-                <span className="w-24 text-center">时间</span>
-                <span className="w-20 text-center">操作</span>
-              </div>
-              {filtered.map((item, i) => {
-                const cfg = statusConfig[item.status] || statusConfig['成功'];
-                return (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.2, delay: i * 0.02 }}
-                    className="h-14 flex items-center px-4 border-b border-[#EFEDEB] hover:bg-[#FBF7F4] transition-colors group"
-                  >
-                    {/* Type */}
-                    <span className="w-16 text-center">
-                      <span className={cn(
-                        'inline-block px-2 py-0.5 rounded text-[11px] font-medium',
-                        item.type === '剧本' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
-                        item.type === '角色' ? 'bg-[#F0F3F7] text-[#5A7FA8]' :
-                        item.type === '分镜' ? 'bg-[#FDF8F0] text-[#C49A3C]' :
-                        item.type === '视频' ? 'bg-[#F0F5F0] text-[#5B8C5A]' :
-                        item.type === '配音' ? 'bg-[#FDF2F0] text-[#B85C50]' :
-                        item.type === 'BGM' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
-                        'bg-[#EFEDEB] text-[#6E6862]'
-                      )}>
-                        {item.type}
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 size={32} className="animate-spin text-[#A8835F]" />
+            <span className="ml-3 text-[#A8A39E]">加载中...</span>
+          </div>
+        ) : (
+          /* History List */
+          <AnimatePresence mode="wait">
+            {filtered.length > 0 ? (
+              <motion.div key={filterType} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-xl border border-[#DEDBD8] shadow-sm overflow-hidden">
+                <div className="h-10 flex items-center px-4 bg-[#F8F7F6] border-b border-[#EFEDEB] text-caption text-[#8B847E] font-medium">
+                  <span className="w-16 text-center">类型</span>
+                  <span className="w-20 text-center">状态</span>
+                  <span className="flex-1">项目</span>
+                  <span className="w-20 text-center">成本</span>
+                  <span className="w-24 text-center">耗时</span>
+                  <span className="w-24 text-center">时间</span>
+                  <span className="w-20 text-center">操作</span>
+                </div>
+                {filtered.map((item, i) => {
+                  const cfg = statusConfig[item.status] || statusConfig['成功'];
+                  return (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: i * 0.02 }}
+                      className="h-14 flex items-center px-4 border-b border-[#EFEDEB] hover:bg-[#FBF7F4] transition-colors group"
+                    >
+                      {/* Type */}
+                      <span className="w-16 text-center">
+                        <span className={cn(
+                          'inline-block px-2 py-0.5 rounded text-[11px] font-medium',
+                          item.type === '剧本' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
+                          item.type === '角色' ? 'bg-[#F0F3F7] text-[#5A7FA8]' :
+                          item.type === '分镜' ? 'bg-[#FDF8F0] text-[#C49A3C]' :
+                          item.type === '视频' ? 'bg-[#F0F5F0] text-[#5B8C5A]' :
+                          item.type === '配音' ? 'bg-[#FDF2F0] text-[#B85C50]' :
+                          item.type === 'BGM' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
+                          'bg-[#EFEDEB] text-[#6E6862]'
+                        )}>
+                          {item.type}
+                        </span>
                       </span>
-                    </span>
 
-                    {/* Status */}
-                    <span className="w-20 flex justify-center">
-                      <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium', cfg.bg, cfg.text)}>
-                        {cfg.icon}
-                        {item.status}
+                      {/* Status */}
+                      <span className="w-20 flex justify-center">
+                        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium', cfg.bg, cfg.text)}>
+                          {cfg.icon}
+                          {item.status}
+                        </span>
                       </span>
-                    </span>
 
-                    {/* Project */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-small text-[#383431] truncate">{item.projectName} <span className="text-[#A8A39E]">/ {item.episodeName}</span></p>
-                      {item.detail && <p className="text-[11px] text-[#B85C50] mt-0.5">{item.detail}</p>}
-                    </div>
+                      {/* Project */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-small text-[#383431] truncate">{item.projectName}</p>
+                        {item.detail && <p className="text-[11px] text-[#B85C50] mt-0.5">{item.detail}</p>}
+                      </div>
 
-                    {/* Cost */}
-                    <span className="w-20 text-center text-caption font-mono text-[#6E6862]">{item.cost}</span>
+                      {/* Cost */}
+                      <span className="w-20 text-center text-caption font-mono text-[#6E6862]">{item.cost}</span>
 
-                    {/* Duration */}
-                    <span className="w-24 text-center text-caption text-[#A8A39E]">{item.duration}</span>
+                      {/* Duration */}
+                      <span className="w-24 text-center text-caption text-[#A8A39E]">{item.duration}</span>
 
-                    {/* Time */}
-                    <span className="w-24 text-center text-caption text-[#A8A39E]">{item.createdAt}</span>
+                      {/* Time */}
+                      <span className="w-24 text-center text-caption text-[#A8A39E]">{item.createdAt}</span>
 
-                    {/* Actions */}
-                    <div className="w-20 flex justify-center items-center gap-1">
-                      {item.status === '失败' && (
-                        <button onClick={() => handleRetry(item.id)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all" title="重试">
-                          <RefreshCw size={13} />
+                      {/* Actions */}
+                      <div className="w-20 flex justify-center items-center gap-1">
+                        {item.status === '失败' && (
+                          <button onClick={() => handleRetry(item.id)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all" title="重试">
+                            <RefreshCw size={13} />
+                          </button>
+                        )}
+                        <button onClick={() => toastInfo(`查看「${item.projectName}」的${item.type}详情`)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all opacity-0 group-hover:opacity-100" title="查看详情">
+                          <Eye size={13} />
                         </button>
-                      )}
-                      <button onClick={() => toastInfo(`查看「${item.projectName} ${item.episodeName}」的${item.type}详情`)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all opacity-0 group-hover:opacity-100" title="查看详情">
-                        <Eye size={13} />
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          ) : (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20">
-              <div className="w-20 h-20 rounded-full bg-[#F5EDE6] flex items-center justify-center mb-4">
-                <Clock size={32} className="text-[#C4A07F]" />
-              </div>
-              <h3 className="text-h4 text-[#524D48] mb-2">暂无生成记录</h3>
-              <p className="text-small text-[#A8A39E]">当你开始生成剧本、分镜或视频时，记录将显示在这里</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            ) : (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-20">
+                <div className="w-20 h-20 rounded-full bg-[#F5EDE6] flex items-center justify-center mb-4">
+                  <Clock size={32} className="text-[#C4A07F]" />
+                </div>
+                <h3 className="text-h4 text-[#524D48] mb-2">暂无生成记录</h3>
+                <p className="text-small text-[#A8A39E]">当你开始生成剧本、分镜或视频时，记录将显示在这里</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
 
         <ConfirmDialog isOpen={showClearConfirm} onClose={() => setShowClearConfirm(false)} onConfirm={clearAll} title="清空生成记录" description="确定要清空所有生成记录吗？此操作不可恢复。" confirmText="清空" cancelText="取消" confirmVariant="danger" />
       </div>

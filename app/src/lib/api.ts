@@ -501,12 +501,24 @@ export const rateSkill = (id: string, rating: number, comment?: string) =>
 
 export interface GenerationTaskData {
   task_id: string;
-  status: string;
+  project_id: string;
   stage: string;
+  skill_id: string;
+  status: string;
   progress: number;
   detail: string;
   result: Record<string, unknown> | null;
-  created_at: string;
+  error_message: string;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface GenerationTaskListData {
+  items: GenerationTaskData[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export const submitGenerationTask = (data: {
@@ -519,10 +531,48 @@ export const submitGenerationTask = (data: {
   body: JSON.stringify(data),
 });
 
+export const getGenerationTasks = (params?: {
+  project_id?: string;
+  stage?: string;
+  status?: string;
+  page?: number;
+  page_size?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.stage) qs.set('stage', params.stage);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.page) qs.set('page', params.page.toString());
+  if (params?.page_size) qs.set('page_size', params.page_size.toString());
+  const query = qs.toString();
+  return request<GenerationTaskListData>(`/generation${query ? '?' + query : ''}`);
+};
+
 export const getGenerationTask = (taskId: string) =>
   request<GenerationTaskData>(`/generation/${taskId}`);
+
+export const updateGenerationTask = (
+  taskId: string,
+  data: { status?: string; progress?: number; detail?: string; error_message?: string }
+) => request<GenerationTaskData>(`/generation/${taskId}`, {
+  method: 'PUT',
+  body: JSON.stringify(data),
+});
 
 export const cancelGenerationTask = (taskId: string) =>
   request<{ message: string }>(`/generation/${taskId}`, {
     method: 'DELETE',
   });
+
+export const clearGenerationTasks = (params?: {
+  project_id?: string;
+  status?: string;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.status) qs.set('status', params.status);
+  const query = qs.toString();
+  return request<{ message: string }>(`/generation${query ? '?' + query : ''}`, {
+    method: 'DELETE',
+  });
+};

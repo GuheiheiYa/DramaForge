@@ -138,15 +138,27 @@
 
 ## [F-008] 生成记录 ← [R-008]
 
-**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-15 15:30:00
 
 **实现方式**:
 - 任务列表，按类型/状态筛选
 - 统计卡片（总数/成功/失败/进行中）
 - 失败任务支持重试，支持清空记录
+- **已对接后端 API**：`getGenerationTasks()` 从数据库加载，支持分页和筛选
+- 清空记录调用 `clearGenerationTasks()` 后端接口
 
 **关联文件**:
-- `src/pages/GenerationHistory.tsx`
+- `app/src/pages/GenerationHistory.tsx` — 对接后端 API，移除 mock 数据
+- `app/src/lib/api.ts` — 新增 Generation API 函数
+- `backend/app/api/v1/generation.py` — 对接数据库，支持 CRUD + 分页
+- `backend/app/models/db_models.py` — 新增 GenerationTask 表
+- `backend/app/models/schemas.py` — 新增 GenerationTaskCreate/Response schema
+
+**数据来源**:
+- 后端 `/api/v1/generation` API（SQLite 数据库）
+
+**已知问题**:
+- 重试功能需要知道原始参数，目前只刷新状态
 
 ---
 

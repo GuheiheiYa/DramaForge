@@ -275,14 +275,36 @@ class PipelineStatusResponse(BaseModel):
 
 # ─── 生成任务 ───
 
+class GenerationTaskCreate(BaseModel):
+    """创建生成任务请求。"""
+    project_id: str = Field(..., description="项目 ID")
+    stage: str = Field(..., description="任务阶段: script/character/storyboard/video/audio/compose")
+    skill_id: str = Field(default="", description="使用的 SKILL ID")
+    creative_input: str = Field(default="", description="创作描述")
+
+
 class GenerationTaskResponse(BaseModel):
     """生成任务响应。"""
     task_id: str
-    status: str
+    project_id: str
     stage: str
+    skill_id: str = ""
+    status: str
     progress: int
     detail: str = ""
     result: dict | None = None
+    error_message: str = ""
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+
+
+class GenerationTaskListResponse(BaseModel):
+    """生成任务列表响应。"""
+    items: list[GenerationTaskResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 # ─── SKILL ───

@@ -1,5 +1,22 @@
 # 更新日志
 
+## 2026-06-15 15:30:00 — 生成记录持久化到数据库
+
+**需求**: [R-008]
+**修改文件**:
+- `backend/app/models/db_models.py` — 新增 GenerationTask 表
+- `backend/app/api/v1/generation.py` — 对接数据库，支持 CRUD + 分页
+- `backend/app/models/schemas.py` — 新增 GenerationTaskCreate/Response/ListResponse schema
+- `app/src/lib/api.ts` — 新增 Generation API 函数（getGenerationTasks/clearGenerationTasks）
+- `app/src/pages/GenerationHistory.tsx` — 对接后端 API，移除 mock 数据
+
+**变更摘要**:
+- 后端新增 GenerationTask 数据库表，记录任务执行历史
+- generation.py 从内存字典改为数据库操作，支持分页和筛选
+- 前端 GenerationHistory.tsx 使用 `useEffect` 从后端加载数据
+- 清空记录功能调用后端 API，支持按项目/状态筛选清空
+- 统计卡片从后端数据计算，支持实时更新
+
 ## 2026-06-15 15:00:00 — SKILL 市场对接数据库
 
 **需求**: [R-006]

@@ -237,3 +237,24 @@ class SubtitleSegment(Base):
     duration = Column(Float, default=3, comment="时长(秒)")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class GenerationTask(Base):
+    """生成任务表 — 记录所有生成任务的执行历史。"""
+    __tablename__ = "generation_tasks"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    stage = Column(String(50), nullable=False, comment="任务阶段: script/character/storyboard/video/audio/compose")
+    skill_id = Column(String(50), default="", comment="使用的 SKILL ID")
+    status = Column(String(20), default="queued", comment="状态: queued/running/completed/failed/cancelled")
+    progress = Column(Integer, default=0, comment="进度 0-100")
+    detail = Column(Text, default="", comment="状态详情")
+    result_json = Column(JSON, default=None, comment="结果数据 JSON")
+    error_message = Column(Text, default="", comment="错误信息")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    started_at = Column(DateTime, default=None, comment="开始执行时间")
+    completed_at = Column(DateTime, default=None, comment="完成时间")
+
+    # 关联
+    project = relationship("Project", backref="generation_tasks")
