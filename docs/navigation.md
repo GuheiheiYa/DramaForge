@@ -82,7 +82,8 @@ DramaForge/
 │   ├── issues.md                 # 问题追踪
 │   ├── design.md                 # 设计概览
 │   ├── design/                   # 功能级设计方案
-│   │   └── chat-studio-design.md # [D-001] Chat Studio 设计
+│   │   ├── chat-studio-design.md # [D-001] Chat Studio 设计
+│   │   └── project-context-design.md # [D-002] 项目上下文贯穿设计
 │   ├── navigation.md             # 项目导航（本文件）
 │   ├── data-model.md             # 数据模型（12 张表 + 关联关系）
 │   ├── changelog.md              # 更新日志
