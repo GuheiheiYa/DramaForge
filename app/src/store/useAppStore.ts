@@ -155,8 +155,12 @@ export const useAppStore = create<AppState>((set) => ({
   aiPanelOpen: false,
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
 
-  selectedProjectId: null,
-  setSelectedProject: (id) => set({ selectedProjectId: id }),
+  selectedProjectId: localStorage.getItem('selectedProjectId') || null,
+  setSelectedProject: (id) => {
+    if (id) localStorage.setItem('selectedProjectId', id);
+    else localStorage.removeItem('selectedProjectId');
+    set({ selectedProjectId: id });
+  },
 
   projects: mockProjects,
   addProject: (project) => set((s) => ({ projects: [project, ...s.projects] })),
