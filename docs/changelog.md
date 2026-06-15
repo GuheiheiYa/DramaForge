@@ -1,5 +1,21 @@
 # 更新日志
 
+## 2026-06-15 12:35:00 — 项目上下文贯穿 + Chat 项目绑定
+
+**需求**: [R-031]~[R-040]
+**修改文件**:
+- `app/src/pages/Dashboard.tsx` — 对接后端 getProjects/createProject/deleteProject API
+- `app/src/pages/CharacterManager.tsx` — 读取 selectedProjectId，API 调用带 project_id 过滤
+- `app/src/pages/ScriptEditor.tsx` — 读取 selectedProjectId，getScripts 带 project_id 过滤
+- `app/src/pages/StoryboardWorkbench.tsx` — 读取 selectedProjectId，API 调用带 project_id 过滤
+- `app/src/pages/Chat.tsx` — 新增 ProjectSelector 组件，Pipeline 使用真实 selectedProjectId
+- `docs/requirements.md` — R-031~R-040 标记 ✅
+- `docs/features.md` — 更新 F-001 实现方式
+
+**变更摘要**:
+- 阶段1（R-031~R-036）：项目上下文贯穿 — Dashboard 对接 API，三大页面按 selectedProjectId 过滤数据
+- 阶段2（R-037~R-040）：Chat 项目绑定 — 顶部项目选择器，Pipeline 保存使用真实 project_id
+
 ## 2026-06-12 17:50:00 — 补全 12 张表 + 全量 UUID + seed 重建
 
 **需求**: [R-012], [R-021]

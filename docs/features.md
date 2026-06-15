@@ -2,21 +2,22 @@
 
 ## [F-001] 项目 Dashboard ← [R-001]
 
-**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-15 12:30:00
 
 **实现方式**:
-- `Dashboard.tsx` 主页面，包含项目卡片列表、搜索筛癣排序、新建项目向导
+- `Dashboard.tsx` 主页面，包含项目卡片列表、搜索筛选、排序、新建项目向导
 - `ProjectCard.tsx` 支持网格/列表两种视图，右键菜单（重命名、复制、导出、删除）
-- `useAppStore` 管理项目状态（mock 数据）
+- `useAppStore` 管理项目状态
+- **已对接后端 API**：`useEffect` 调用 `apiGetProjects()` 加载项目列表，`NewProjectModal` 调用 `apiCreateProject()` 创建项目，`confirmDelete` 调用 `apiDeleteProject()` 删除项目
 
 **关联文件**:
 - `src/pages/Dashboard.tsx`
 - `src/components/ProjectCard.tsx`
 - `src/store/useAppStore.ts`
+- `src/lib/api.ts`（getProjects / createProject / deleteProject）
 
-**已知问题**:
-- 项目数据为 mock，未接入后端 API
-- 点击项目卡片跳转到剧本编辑器，但未传递项目上下文
+**数据来源**:
+- 后端 `/api/v1/projects` API（失败时 fallback 到 mock 数据）
 
 ---
 
