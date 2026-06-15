@@ -403,3 +403,33 @@ class PaginatedResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ─── 素材 ───
+
+class AssetResponse(BaseModel):
+    """素材响应。"""
+    id: str
+    project_id: str
+    name: str
+    type: str
+    file_path: str = ""
+    file_size: int = 0
+    size_str: str = ""
+    mime_type: str = ""
+    width: int = 0
+    height: int = 0
+    duration: float = 0
+    duration_str: str = ""
+    resolution: str = ""
+    thumbnail_path: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AssetListResponse(BaseModel):
+    """素材列表响应。"""
+    items: list[AssetResponse]
+    total: int
+    page: int
+    page_size: int

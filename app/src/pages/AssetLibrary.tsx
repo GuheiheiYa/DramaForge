@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -13,10 +13,19 @@ import {
   MoreHorizontal,
   Grid3X3,
   List,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toastSuccess, toastInfo } from '@/hooks/useToast';
+import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
+import { useAppStore } from '@/store/useAppStore';
+import {
+  getAssets,
+  uploadAsset,
+  deleteAsset,
+  batchDeleteAssets,
+  type AssetData,
+} from '@/lib/api';
 
 type AssetType = 'all' | 'image' | 'audio' | 'video';
 
@@ -33,20 +42,45 @@ interface Asset {
   color: string;
 }
 
-const mockAssets: Asset[] = [
-  { id: 'a1', name: '主角立绘_正面', type: 'image', size: '2.3MB', resolution: '1024×1024', createdAt: '2小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F5EDE6' },
-  { id: 'a2', name: '主角立绘_侧面', type: 'image', size: '1.8MB', resolution: '1024×1024', createdAt: '2小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F0F3F7' },
-  { id: 'a3', name: '场景背景_教室', type: 'image', size: '3.1MB', resolution: '2048×1152', createdAt: '4小时前', projectName: '樱花下的约定', previewUrl: '', color: '#FDF8F0' },
-  { id: 'a4', name: '场景背景_操场', type: 'image', size: '2.9MB', resolution: '2048×1152', createdAt: '4小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F0F5F0' },
-  { id: 'a5', name: '分镜图_开场', type: 'image', size: '1.2MB', resolution: '720×405', createdAt: '1天前', projectName: '樱花下的约定', previewUrl: '', color: '#FDF2F0' },
-  { id: 'a6', name: '角色配音_小明', type: 'audio', size: '856KB', duration: '0:32', createdAt: '3小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F0F3F7' },
-  { id: 'a7', name: '角色配音_小红', type: 'audio', size: '1.1MB', duration: '0:45', createdAt: '3小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F5EDE6' },
-  { id: 'a8', name: 'BGM_校园主题', type: 'audio', size: '4.5MB', duration: '3:24', createdAt: '1天前', projectName: '樱花下的约定', previewUrl: '', color: '#F0F5F0' },
-  { id: 'a9', name: '成片_第1集', type: 'video', size: '156MB', duration: '8:32', resolution: '1920×1080', createdAt: '30分钟前', projectName: '樱花下的约定', previewUrl: '', color: '#FDF8F0' },
-  { id: 'a10', name: '成片_第2集', type: 'video', size: '142MB', duration: '7:48', resolution: '1920×1080', createdAt: '1小时前', projectName: '樱花下的约定', previewUrl: '', color: '#F8F7F6' },
-  { id: 'a11', name: '成片_预览版', type: 'video', size: '45MB', duration: '8:32', resolution: '720p', createdAt: '2小时前', projectName: '樱花下的约定', previewUrl: '', color: '#FDF2F0' },
-  { id: 'a12', name: '片头动画', type: 'video', size: '28MB', duration: '0:15', resolution: '1920×1080', createdAt: '1天前', projectName: '樱花下的约定', previewUrl: '', color: '#F0F3F7' },
-];
+/** 后端 AssetData → 前端 Asset 转换 */
+function toFrontendAsset(a: AssetData, projects: { id: string; name: string }[]): Asset {
+  const project = projects.find((p) => p.id === a.project_id);
+  const colors: Record<string, string> = {
+    image: '#F5EDE6',
+    audio: '#F0F3F7',
+    video: '#FDF8F0',
+  };
+
+  // 格式化时间
+  let createdAt = '未知';
+  if (a.created_at) {
+    const date = new Date(a.created_at);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHour = Math.floor(diffMs / 3600000);
+    const diffDay = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) createdAt = '刚刚';
+    else if (diffMin < 60) createdAt = `${diffMin}分钟前`;
+    else if (diffHour < 24) createdAt = `${diffHour}小时前`;
+    else if (diffDay < 7) createdAt = `${diffDay}天前`;
+    else createdAt = date.toLocaleDateString('zh-CN');
+  }
+
+  return {
+    id: a.id,
+    name: a.name,
+    type: a.type as Asset['type'],
+    size: a.size_str,
+    duration: a.duration_str || undefined,
+    resolution: a.resolution || undefined,
+    createdAt,
+    projectName: project?.name || '未知项目',
+    previewUrl: a.file_path,
+    color: colors[a.type] || '#F8F7F6',
+  };
+}
 
 const typeIcons: Record<string, React.ReactNode> = {
   image: <Image size={16} className="text-[#A8835F]" />,
@@ -81,12 +115,37 @@ function AssetPreview({ asset }: { asset: Asset }) {
 }
 
 export default function AssetLibrary() {
-  const [assets] = useState<Asset[]>(mockAssets);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<AssetType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const projects = useAppStore((s) => s.projects);
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+
+  // 从后端加载素材列表
+  const loadAssets = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getAssets({
+        project_id: selectedProjectId || undefined,
+        page_size: 200,
+      });
+      setAssets(data.items.map((a) => toFrontendAsset(a, projects)));
+    } catch (err) {
+      console.error('[AssetLibrary] 加载失败:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedProjectId, projects]);
+
+  useEffect(() => {
+    loadAssets();
+  }, [loadAssets]);
 
   const filteredAssets = useMemo(() => {
     let result = [...assets];
@@ -111,11 +170,69 @@ export default function AssetLibrary() {
     );
   };
 
-  const handleUpload = () => toastInfo('上传功能即将上线');
+  const handleUpload = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (!selectedProjectId) {
+      toastError('请先选择一个项目');
+      return;
+    }
+
+    setUploading(true);
+    let successCount = 0;
+
+    for (const file of Array.from(files)) {
+      try {
+        await uploadAsset(selectedProjectId, file.name, file);
+        successCount++;
+      } catch (err) {
+        console.error('[AssetLibrary] 上传失败:', err);
+        toastError(`上传「${file.name}」失败`);
+      }
+    }
+
+    if (successCount > 0) {
+      toastSuccess(`成功上传 ${successCount} 个素材`);
+      await loadAssets();
+    }
+
+    setUploading(false);
+    // 清空 input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+
+    try {
+      await batchDeleteAssets(selectedIds);
+      toastSuccess(`已删除 ${selectedIds.length} 个素材`);
+      setSelectedIds([]);
+      await loadAssets();
+    } catch (err) {
+      toastError('删除失败');
+    }
+  };
 
   return (
     <>
       <Toaster position="top-center" />
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,audio/*,video/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       <div className="px-6 py-5 max-w-[1280px] mx-auto">
         {/* Header */}
         <motion.div
@@ -187,14 +304,36 @@ export default function AssetLibrary() {
               </button>
             </div>
 
+            {selectedIds.length > 0 && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                onClick={handleDeleteSelected}
+                className="h-10 px-4 bg-[#B85C50] hover:bg-[#9A4A40] text-white rounded-lg text-small font-medium flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                删除 ({selectedIds.length})
+              </motion.button>
+            )}
+
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleUpload}
-              className="h-10 px-4 bg-[#A8835F] hover:bg-[#8E6A48] text-white rounded-lg text-small font-medium flex items-center gap-2 ml-auto"
+              disabled={uploading}
+              className="h-10 px-4 bg-[#A8835F] hover:bg-[#8E6A48] text-white rounded-lg text-small font-medium flex items-center gap-2 ml-auto disabled:opacity-60"
             >
-              <Upload size={16} />
-              上传素材
+              {uploading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  上传中...
+                </>
+              ) : (
+                <>
+                  <Upload size={16} />
+                  上传素材
+                </>
+              )}
             </motion.button>
           </div>
 
@@ -223,9 +362,16 @@ export default function AssetLibrary() {
           </div>
         </motion.div>
 
-        {/* Asset Grid/List */}
-        <AnimatePresence mode="wait">
-          {filteredAssets.length > 0 ? (
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 size={32} className="animate-spin text-[#A8835F]" />
+            <span className="ml-3 text-[#A8A39E]">加载中...</span>
+          </div>
+        ) : (
+          /* Asset Grid/List */
+          <AnimatePresence mode="wait">
+            {filteredAssets.length > 0 ? (
             <motion.div key={`${viewMode}-${filterType}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -353,7 +499,16 @@ export default function AssetLibrary() {
                 <button onClick={() => { toastInfo(`下载「${previewAsset.name}」`); setPreviewAsset(null); }} className="flex-1 h-10 rounded-lg bg-[#A8835F] text-small font-medium text-white hover:bg-[#8E6A48] transition-colors flex items-center justify-center gap-2">
                   <Download size={14} /> 下载
                 </button>
-                <button onClick={() => { toastSuccess(`已删除「${previewAsset.name}」`); setPreviewAsset(null); }} className="flex-1 h-10 rounded-lg border border-[#DEDBD8] text-small font-medium text-[#B85C50] hover:bg-[#FDF2F0] transition-colors flex items-center justify-center gap-2">
+                <button onClick={async () => {
+                  try {
+                    await deleteAsset(previewAsset.id);
+                    toastSuccess(`已删除「${previewAsset.name}」`);
+                    setPreviewAsset(null);
+                    await loadAssets();
+                  } catch (err) {
+                    toastError('删除失败');
+                  }
+                }} className="flex-1 h-10 rounded-lg border border-[#DEDBD8] text-small font-medium text-[#B85C50] hover:bg-[#FDF2F0] transition-colors flex items-center justify-center gap-2">
                   <Trash2 size={14} /> 删除
                 </button>
               </div>

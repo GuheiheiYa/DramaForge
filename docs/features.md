@@ -124,15 +124,29 @@
 
 ## [F-007] 素材库 ← [R-007]
 
-**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-15 16:00:00
 
 **实现方式**:
 - 图片/音频/视频分类展示，网格/列表视图
-- 搜索、类型筛癣统计卡片
+- 搜索、类型筛选、统计卡片
 - 预览弹窗（下载、删除）
+- **已对接后端 API**：`getAssets()` 从数据库加载，支持按项目/类型筛选
+- 文件上传调用 `uploadAsset()`，支持多文件批量上传
+- 删除支持单个和批量删除
 
 **关联文件**:
-- `src/pages/AssetLibrary.tsx`
+- `app/src/pages/AssetLibrary.tsx` — 对接后端 API，移除 mock 数据
+- `app/src/lib/api.ts` — 新增 Asset API 函数（getAssets/uploadAsset/deleteAsset/batchDeleteAssets）
+- `backend/app/api/v1/assets.py` — 新增素材管理路由，支持 CRUD + 文件上传
+- `backend/app/models/db_models.py` — 新增 Asset 表
+- `backend/app/models/schemas.py` — 新增 AssetResponse/AssetListResponse schema
+
+**数据来源**:
+- 后端 `/api/v1/assets` API（SQLite 数据库 + 文件系统）
+
+**已知问题**:
+- 文件上传需要配置存储路径（当前使用本地 uploads/ 目录）
+- 图片预览需要生成缩略图（当前使用占位图标）
 
 ---
 

@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-15 16:00:00 — 素材库对接数据库 + 文件上传
+
+**需求**: [R-007]
+**修改文件**:
+- `backend/app/models/db_models.py` — 新增 Asset 表
+- `backend/app/api/v1/assets.py` — 新增素材管理路由，支持 CRUD + 文件上传
+- `backend/app/models/schemas.py` — 新增 AssetResponse/AssetListResponse schema
+- `backend/app/main.py` — 注册 assets 路由
+- `app/src/lib/api.ts` — 新增 Asset API 函数（getAssets/uploadAsset/deleteAsset/batchDeleteAssets）
+- `app/src/pages/AssetLibrary.tsx` — 对接后端 API，移除 mock 数据
+
+**变更摘要**:
+- 后端新增 Asset 数据库表，记录素材元数据
+- assets.py 支持文件上传、单个删除、批量删除
+- 前端 AssetLibrary.tsx 使用 `useEffect` 从后端加载数据
+- 文件上传支持多文件批量上传，自动识别文件类型
+- 删除支持预览弹窗删除和批量选择删除
+
 ## 2026-06-15 15:30:00 — 生成记录持久化到数据库
 
 **需求**: [R-008]

@@ -258,3 +258,25 @@ class GenerationTask(Base):
 
     # 关联
     project = relationship("Project", backref="generation_tasks")
+
+
+class Asset(Base):
+    """素材表 — 项目中的图片/音频/视频素材。"""
+    __tablename__ = "assets"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(200), nullable=False, comment="素材名称")
+    type = Column(String(20), nullable=False, comment="类型: image/audio/video")
+    file_path = Column(String(500), default="", comment="文件路径")
+    file_size = Column(Integer, default=0, comment="文件大小(字节)")
+    mime_type = Column(String(100), default="", comment="MIME 类型")
+    width = Column(Integer, default=0, comment="图片/视频宽度")
+    height = Column(Integer, default=0, comment="图片/视频高度")
+    duration = Column(Float, default=0, comment="音频/视频时长(秒)")
+    thumbnail_path = Column(String(500), default="", comment="缩略图路径")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+
+    # 关联
+    project = relationship("Project", backref="assets")

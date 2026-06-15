@@ -576,3 +576,84 @@ export const clearGenerationTasks = (params?: {
     method: 'DELETE',
   });
 };
+
+// ─── Asset API ───
+
+export interface AssetData {
+  id: string;
+  project_id: string;
+  name: string;
+  type: string;
+  file_path: string;
+  file_size: number;
+  size_str: string;
+  mime_type: string;
+  width: number;
+  height: number;
+  duration: number;
+  duration_str: string;
+  resolution: string;
+  thumbnail_path: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AssetListData {
+  items: AssetData[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export const getAssets = (params?: {
+  project_id?: string;
+  type?: string;
+  page?: number;
+  page_size?: number;
+}) => {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.type) qs.set('type', params.type);
+  if (params?.page) qs.set('page', params.page.toString());
+  if (params?.page_size) qs.set('page_size', params.page_size.toString());
+  const query = qs.toString();
+  return request<AssetListData>(`/assets${query ? '?' + query : ''}`);
+};
+
+export const getAsset = (id: string) => request<AssetData>(`/assets/${id}`);
+
+export const uploadAsset = async (projectId: string, name: string, file: File) => {
+  const formData = new FormData();
+  formData.append('project_id', projectId);
+  formData.append('name', name);
+  formData.append('file', file);
+
+  const resp = await fetch(`${API_BASE}/assets/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Upload ${resp.status}: ${errText}`);
+  }
+
+  return resp.json() as Promise<AssetData>;
+};
+
+export const updateAsset = (id: string, data: { name?: string }) =>
+  request<AssetData>(`/assets/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+
+export const deleteAsset = (id: string) =>
+  request<{ message: string }>(`/assets/${id}`, {
+    method: 'DELETE',
+  });
+
+export const batchDeleteAssets = (assetIds: string[]) =>
+  request<{ message: string }>('/assets', {
+    method: 'DELETE',
+    body: JSON.stringify(assetIds),
+  });
