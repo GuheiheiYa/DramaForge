@@ -35,6 +35,11 @@ export default function CharacterCard({
   const menuRef = useRef<HTMLDivElement>(null);
   const { success } = useToast();
 
+  // 同步 prop 变化到本地状态
+  useEffect(() => {
+    setImageStatus(character.hasGeneratedImage ? '已生成' : '未生成');
+  }, [character.hasGeneratedImage]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -69,11 +74,6 @@ export default function CharacterCard({
     if (imageStatus === '未生成') {
       onGenerateImage(character);
       setImageStatus('生成中');
-      setTimeout(() => setImageStatus('已生成'), 2000);
-    } else if (imageStatus === '已生成') {
-      setImageStatus('未生成');
-    } else {
-      setImageStatus('未生成');
     }
   };
 

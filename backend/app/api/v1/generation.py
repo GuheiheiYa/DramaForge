@@ -67,7 +67,7 @@ async def list_tasks(
         count_query = count_query.where(GenerationTask.stage == stage)
     if status:
         count_query = count_query.where(GenerationTask.status == status)
-    total = len(await db.execute(count_query).scalars().all())
+    total = len((await db.execute(count_query)).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(GenerationTask.created_at))
@@ -154,7 +154,7 @@ async def clear_tasks(
     if status:
         query = query.where(GenerationTask.status == status)
 
-    tasks = await db.execute(query).scalars().all()
+    tasks = (await db.execute(query)).scalars().all()
     for task in tasks:
         await db.delete(task)
     await db.commit()

@@ -42,19 +42,23 @@
 
 ## [F-003] 角色管理台 ← [R-003]
 
-**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-16 14:50:00
 
 **实现方式**:
 - 角色卡片网格展示，支持筛选（主角/配角/龙套）
-- 创建/编辑表单（名称、描述、性格、外貌等）
+- 创建/编辑表单（6 个 tab：基本信息/性格/外貌/服装/关系/备注）
 - 详情抽屉（角色信息、资产列表、关联场景）
-- 形象生成模拟
+- AI 文字生成角色（MiMo LLM 返回 JSON → 解析保存）
+- **Agnes 图像生成形象**：点击「生成形象」→ 后端调用 Agnes API → 使用角色全部字段构建英文 prompt → 返回图片 URL → 更新 avatar_url
 
 **关联文件**:
-- `src/pages/CharacterManager.tsx`
-- `src/pages/character/CharacterGrid.tsx`
-- `src/pages/character/CharacterForm.tsx`
-- `src/pages/character/CharacterDetailDrawer.tsx`
+- `app/src/pages/CharacterManager.tsx`
+- `app/src/pages/character/CharacterGrid.tsx`
+- `app/src/pages/character/CharacterForm.tsx`
+- `app/src/pages/character/CharacterDetailDrawer.tsx`
+- `app/src/pages/character/CharacterCard.tsx`
+- `backend/app/api/v1/images.py` — POST /images/generate-character
+- `backend/app/services/image_service.py` — Agnes 图像生成 prompt 构建 + API 调用
 
 ---
 
@@ -272,6 +276,30 @@
 - 面板内只做轻量交互，复杂编辑跳转专属页面
 - 6 个步骤的数据与对应页面共享同一份 store
 - 失败时暂停流程，用户决定重试或跳过
+
+---
+
+## [F-015] Agnes 视频生成 ← [R-023]
+
+**状态**: 已完成  **实现时间**: 2026-06-16 14:50:00  **最后更新**: 2026-06-16 14:50:00
+
+**实现方式**:
+- Agnes 视频模型（agnes-video-v2.0），OpenAI 兼容协议 `/v1/videos`
+- 支持 4 种模式：
+  - 文生视频：仅 prompt + width/height
+  - 图生视频：prompt + image_url（单图）
+  - 多图视频：prompt + image_urls[]（多图）
+  - 关键帧动画：prompt + image_urls[] + mode="keyframes"
+- 分镜视频生成：根据 StoryboardShot 的 description + camera_movement 自动构建 prompt
+
+**关联文件**:
+- `backend/app/services/video_service.py` — Agnes 视频生成服务
+- `backend/app/api/v1/videos.py` — POST /videos/generate + /videos/generate-shot
+- `app/src/lib/api.ts` — generateVideo() + generateShotVideo()
+
+**数据来源**:
+- 前端传入 prompt / image_url / image_urls
+- 分镜模式从 StoryboardShot 表读取 description
 
 ---
 

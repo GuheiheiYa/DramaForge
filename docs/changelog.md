@@ -1,5 +1,35 @@
 # 更新日志
 
+## 2026-06-16 14:50:00 — Agnes 图像/视频生成接入 + await 优先级 Bug 修复
+
+**需求**: [R-023], [R-044]
+**问题**: [ISS-011]（已解决）
+**修改文件**:
+- `backend/app/config.py` — 新增 AGNES_API_KEY/BASE_URL/MODEL/VIDEO_MODEL 配置
+- `backend/app/services/image_service.py` — 新建，Agnes 图像生成服务（角色立绘）
+- `backend/app/services/video_service.py` — 新建，Agnes 视频生成服务（文生/图生/多图/关键帧）
+- `backend/app/api/v1/images.py` — 新建，POST /images/generate-character 端点
+- `backend/app/api/v1/videos.py` — 新建，POST /videos/generate + /videos/generate-shot 端点
+- `backend/app/main.py` — 注册 images/videos 路由
+- `app/src/lib/api.ts` — 新增 generateCharacterImage/generateVideo/generateShotVideo
+- `app/src/pages/CharacterManager.tsx` — handleGenerateImage 对接真实 Agnes API
+- `app/src/pages/character/CharacterCard.tsx` — 移除假 setTimeout，添加 prop→state 同步
+- `backend/app/api/v1/notifications.py` — 修复 await 运算符优先级 Bug
+- `backend/app/api/v1/costs.py` — 同上
+- `backend/app/api/v1/assets.py` — 同上
+- `backend/app/api/v1/generation.py` — 同上
+
+**变更摘要**:
+- 接入 Agnes 图像模型（agnes-image-2.1-flash），角色管理台「生成形象」按钮真实调用 API
+- prompt 构建使用角色全部字段：gender/age/role/appearance/costume/personality/personality_traits/description/background/special_setting
+- 接入 Agnes 视频模型（agnes-video-v2.0），支持 4 种模式：文生视频、图生视频、多图视频、关键帧动画
+- 修复后端 4 个路由文件共 10 处 `await db.execute(query).scalars()` 运算符优先级 Bug（需加括号）
+
+**变更原因**:
+- 原 `await db.execute(query).scalars()` 因 `await` 优先级低于 `.`，导致对未 await 的协程调用 `.scalars()`，抛出 AttributeError，表现为 500 Internal Server Error + CORS 头缺失
+
+---
+
 ## 2026-06-15 17:00:00 — 通知系统对接数据库
 
 **需求**: [R-010]
@@ -175,8 +205,8 @@
 **问题**: [ISS-005]
 **修改文件**:
 - `app/src/pages/Chat.tsx` — 补全 Pipeline Step 3-6（分镜/视频/配音/合成），添加调试日志
-- `app/src/store/useChatStore.ts` — API 端口 7777→7778，错误提示更新
-- `app/src/lib/api.ts` — API 端口 7777→7778
+- `app/src/store/useChatStore.ts` — API 端口 7777→7779，错误提示更新
+- `app/src/lib/api.ts` — API 端口 7777→7779
 - `backend/app/api/v1/pipeline.py` — 流式端点添加调试日志
 
 **变更摘要**:
@@ -185,7 +215,7 @@
 - 端到端流程 12 秒内完成（模拟）
 - 每个步骤添加 console.log 调试日志
 - 后端流式端点添加请求/响应日志
-- 端口从 7777 迁移到 7778（7777 有僵尸进程）
+- 端口从 7777 迁移到 7779（7777 有僵尸进程）
 
 ---
 

@@ -15,6 +15,7 @@ import {
   createCharacter as apiCreateCharacter,
   updateCharacter as apiUpdateCharacter,
   deleteCharacter as apiDeleteCharacter,
+  generateCharacterImage,
   chatStream,
   type CharacterData,
 } from '@/lib/api';
@@ -228,17 +229,23 @@ export default function CharacterManager() {
     setEditingCharacter(null);
   }, []);
 
-  const handleGenerateImage = useCallback((character: Character) => {
-    success(MSG.generateStarted + `「${character.name}」形象`);
-    setTimeout(() => {
+  const handleGenerateImage = useCallback(async (character: Character) => {
+    info(`正在为「${character.name}」生成形象...`);
+    try {
+      const result = await generateCharacterImage(character.id);
       setCharacters((prev) =>
         prev.map((c) =>
-          c.id === character.id ? { ...c, hasGeneratedImage: true } : c
+          c.id === character.id
+            ? { ...c, avatarUrl: result.image_url, hasGeneratedImage: true }
+            : c
         )
       );
-      success(MSG.generateDone + `「${character.name}」形象生成完毕`);
-    }, 2000);
-  }, [success]);
+      success(`「${character.name}」形象生成完毕`);
+    } catch (err) {
+      console.error('[CharacterManager] 形象生成失败:', err);
+      info('形象生成失败，请重试');
+    }
+  }, [success, info]);
 
   return (
     <>

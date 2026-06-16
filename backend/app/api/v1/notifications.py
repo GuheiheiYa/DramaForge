@@ -34,13 +34,13 @@ async def list_notifications(
 
     # 统计总数和未读数
     count_query = select(Notification).where(Notification.user_id == user_id)
-    total = len(await db.execute(count_query).scalars().all())
+    total = len((await db.execute(count_query)).scalars().all())
 
     unread_query = select(Notification).where(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    unread_count = len(await db.execute(unread_query).scalars().all())
+    unread_count = len((await db.execute(unread_query)).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(Notification.created_at))
@@ -67,7 +67,7 @@ async def get_unread_count(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    count = len(await db.execute(query).scalars().all())
+    count = len((await db.execute(query)).scalars().all())
     return {"unread_count": count}
 
 
@@ -115,7 +115,7 @@ async def mark_all_as_read(
         Notification.user_id == user_id,
         Notification.is_read == False,
     )
-    notifications = await db.execute(query).scalars().all()
+    notifications = (await db.execute(query)).scalars().all()
 
     for notification in notifications:
         notification.is_read = True
@@ -150,7 +150,7 @@ async def clear_notifications(
     if is_read is not None:
         query = query.where(Notification.is_read == is_read)
 
-    notifications = await db.execute(query).scalars().all()
+    notifications = (await db.execute(query)).scalars().all()
     for notification in notifications:
         await db.delete(notification)
 

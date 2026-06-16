@@ -236,6 +236,36 @@ export const deleteCharacter = (id: string) => request<{ message: string }>(`/ch
   method: 'DELETE',
 });
 
+// ─── Image Generation API ───
+
+export const generateCharacterImage = (characterId: string) =>
+  request<{ image_url: string; has_generated_image: boolean }>(
+    '/images/generate-character',
+    { method: 'POST', body: JSON.stringify({ character_id: characterId }) }
+  );
+
+// ─── Video Generation API ───
+
+export const generateVideo = (data: {
+  prompt: string;
+  image_url?: string;
+  image_urls?: string[];
+  mode?: string;
+  width?: number;
+  height?: number;
+  num_frames?: number;
+  frame_rate?: number;
+}) => request<{ video_url: string }>('/videos/generate', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const generateShotVideo = (shotId: string) =>
+  request<{ video_url: string }>('/videos/generate-shot', {
+    method: 'POST',
+    body: JSON.stringify({ shot_id: shotId }),
+  });
+
 // ─── Storyboard API ───
 
 export interface ShotData {

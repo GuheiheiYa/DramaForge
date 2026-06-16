@@ -16,10 +16,14 @@ DramaForge/
 │   │   │   ├── storyboards.py    # 分镜管理
 │   │   │   ├── generation.py     # 生成任务
 │   │   │   ├── skills.py         # SKILL 管理
-│   │   │   └── pipeline.py       # Pipeline + AI 对话
+│   │   │   ├── pipeline.py       # Pipeline + AI 对话
+│   │   │   ├── images.py         # 图像生成（Agnes）
+│   │   │   └── videos.py         # 视频生成（Agnes）
 │   │   ├── services/             # 业务服务
 │   │   │   ├── llm_service.py    # LLM 调用封装
-│   │   │   └── pipeline_service.py # Pipeline 编排
+│   │   │   ├── pipeline_service.py # Pipeline 编排
+│   │   │   ├── image_service.py  # Agnes 图像生成
+│   │   │   └── video_service.py  # Agnes 视频生成
 │   │   ├── models/
 │   │   │   ├── schemas.py        # Pydantic 数据模型
 │   │   │   └── db_models.py      # SQLAlchemy ORM 模型

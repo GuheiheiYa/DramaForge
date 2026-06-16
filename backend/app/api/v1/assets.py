@@ -46,7 +46,7 @@ async def list_assets(
         count_query = count_query.where(Asset.project_id == project_id)
     if type:
         count_query = count_query.where(Asset.type == type)
-    total = len(await db.execute(count_query).scalars().all())
+    total = len((await db.execute(count_query)).scalars().all())
 
     # 分页查询
     query = query.order_by(desc(Asset.created_at))

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     # AI API Keys
-    MIMO_API_KEY: str = "tp-c4hmyrl0gej1sxqn5updht6ocm3nekc7ymorv8mv35d385yu"
+    MIMO_API_KEY: str = "tp-cydnl4md88iv16cqaopj5eapavf92ny8lnlh1ngm3q7pcshu"
     MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
 
     DEEPSEEK_API_KEY: str = ""
@@ -38,6 +38,14 @@ class Settings(BaseSettings):
 
     # 可灵AI
     KLING_API_KEY: str = ""
+
+    # Agnes 图像生成
+    AGNES_API_KEY: str = "sk-2q0XYuDeANEnCSzuWNCshXoT4eUm4Ei3sPSBVKmZoXS1Vsh4"
+    AGNES_BASE_URL: str = "https://apihub.agnes-ai.com"
+    AGNES_MODEL: str = "agnes-image-2.1-flash"
+
+    # Agnes 视频生成
+    AGNES_VIDEO_MODEL: str = "agnes-video-v2.0"
 
     # 火山引擎TTS
     VOLC_TTS_APP_ID: str = ""

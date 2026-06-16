@@ -59,7 +59,7 @@ async def get_cost_summary(
     if project_id:
         query = query.where(CostRecord.project_id == project_id)
 
-    records = await db.execute(query).scalars().all()
+    records = (await db.execute(query)).scalars().all()
 
     # 总费用
     total_cost = sum(r.amount for r in records)
@@ -206,7 +206,7 @@ async def list_cost_records(
     query = query.order_by(desc(CostRecord.created_at))
     query = query.offset((page - 1) * page_size).limit(page_size)
 
-    records = await db.execute(query).scalars().all()
+    records = (await db.execute(query)).scalars().all()
     return [_cost_to_response(r) for r in records]
 
 
