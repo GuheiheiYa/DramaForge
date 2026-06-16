@@ -139,7 +139,7 @@
 
 | ID | 需求描述 | 优先级 | 状态 | 关联 | 备注 |
 |----|---------|--------|------|------|------|
-| R-051 | AI 回复结构化 JSON 提取（替代正则） | P0 | ⏳ | [D-003] | 修改 System Prompt 要求 JSON 输出 + 前端优先 JSON.parse |
+| R-051 | AI 回复结构化 JSON 提取（替代正则） | P0 | ✅ | [D-003] | System Prompt 要求输出 `<pipeline_data>` JSON + extractFromAIReply 两层策略 |
 | R-052 | 前端 Pipeline 真实 API 调用（替代 simulatePipeline） | P0 | ⏳ | [D-003] | 移除 setTimeout，调用 /pipeline/start + SSE 监听 |
 | R-053 | 后端 Pipeline 异步执行 + SSE 进度推送 | P0 | ⏳ | [D-003] | asyncio.create_task 替代 Celery，实时推送每步进度 |
 | R-054 | 三种执行模式区分（auto/confirm/preview） | P0 | ⏳ | [D-003] | auto 全自动，confirm 每步暂停等确认，preview 只提取不生成 |

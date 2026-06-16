@@ -1,7 +1,11 @@
 /**
  * Pipeline 数据提取器
  * 从 AI 回复中提取结构化的剧本和角色数据，用于 Pipeline 面板展示。
- * 当 AI 回复格式不规范时，提供合理的默认值。
+ *
+ * 两层提取策略：
+ * 1. 优先：从 <pipeline_data> 标签中提取 JSON（AI 按 System Prompt 输出）
+ * 2. 回退：正则解析 Markdown 格式（兼容旧版 AI 回复）
+ * 3. 最终回退：生成最小默认数据
  */
 
 import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
@@ -18,8 +22,112 @@ interface ExtractedCharacter {
   name: string;
   role: '主角' | '配角' | '龙套';
   description: string;
+  gender: string;
+  age: number;
+  personality: string;
+  personalityTraits: string[];
+  appearance: string;
+  costume: string;
   status: 'done';
   avatarColor: string;
+}
+
+// ─── JSON 提取（R-051 新增） ───
+
+interface PipelineDataJSON {
+  title?: string;
+  episodes?: Array<{
+    number?: number;
+    title?: string;
+    scenes?: Array<{
+      title?: string;
+      location?: string;
+      time_tag?: string;
+      summary?: string;
+    }>;
+  }>;
+  characters?: Array<{
+    name?: string;
+    role?: string;
+    gender?: string;
+    age?: number;
+    description?: string;
+    personality?: string;
+    personality_traits?: string[];
+    appearance?: string;
+    costume?: string;
+  }>;
+}
+
+/**
+ * 从 AI 回复中提取 <pipeline_data> JSON 块。
+ * 返回 null 表示未找到或解析失败。
+ */
+function extractPipelineDataJSON(aiReply: string): PipelineDataJSON | null {
+  // 匹配 <pipeline_data> ... </pipeline_data>
+  const match = aiReply.match(/<pipeline_data>\s*([\s\S]*?)\s*<\/pipeline_data>/);
+  if (!match) return null;
+
+  let jsonStr = match[1].trim();
+  // 去掉可能包裹的 ```json ... ```
+  jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+
+  try {
+    const data = JSON.parse(jsonStr) as PipelineDataJSON;
+    // 验证基本结构
+    if (data.episodes || data.characters) {
+      return data;
+    }
+  } catch {
+    console.warn('[PipelineExtractor] JSON 解析失败，回退正则提取');
+  }
+  return null;
+}
+
+/**
+ * 将 PipelineDataJSON 转换为 ExtractedScript。
+ */
+function jsonToScriptData(json: PipelineDataJSON, fallbackTitle: string): ExtractedScript {
+  const episodes: ScriptData['episodes'] = (json.episodes || []).map((ep) => ({
+    id: `ep${ep.number || 1}`,
+    number: ep.number || 1,
+    title: ep.title || `第${ep.number || 1}集`,
+    scenes: (ep.scenes || []).map((s, i) => ({
+      id: `s${i + 1}`,
+      title: s.title || `场景${i + 1}`,
+      summary: s.summary || '',
+      location: s.location || '未指定',
+      timeTag: s.time_tag || '日间',
+    })),
+  }));
+
+  return {
+    title: json.title || fallbackTitle,
+    episodes: episodes.length > 0 ? episodes : [{
+      id: 'ep1', number: 1, title: fallbackTitle,
+      scenes: [{ id: 's1', title: '开场', summary: '（等待填充）', location: '未指定', timeTag: '日间' }],
+    }],
+  };
+}
+
+/**
+ * 将 PipelineDataJSON 转换为 ExtractedCharacter 数组。
+ */
+function jsonToCharacterData(json: PipelineDataJSON): ExtractedCharacter[] {
+  return (json.characters || []).map((c, i) => ({
+    id: `char_${i + 1}`,
+    name: c.name || `角色${i + 1}`,
+    role: (['主角', '配角', '龙套'].includes(c.role || '') ? c.role : i < 2 ? '主角' : '配角') as '主角' | '配角' | '龙套',
+    description: c.description || '',
+    gender: c.gender || '',
+    age: c.age || 0,
+    personality: c.personality || '',
+    personalityTraits: c.personality_traits || [],
+    appearance: c.appearance || '',
+    costume: c.costume || '',
+    status: 'done' as const,
+    avatarColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+  }));
 }
 
 // ─── 颜色池 ───
@@ -275,7 +383,64 @@ function createCharacter(name: string, index: number, explicitRole?: '主角' | 
     name,
     role: explicitRole ?? (index < 2 ? '主角' : '配角'),
     description: '（从 AI 回复中提取）',
+    gender: '',
+    age: 0,
+    personality: '',
+    personalityTraits: [],
+    appearance: '',
+    costume: '',
     status: 'done',
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
+  };
+}
+
+// ─── 统一提取入口（R-051） ───
+
+export interface ExtractionResult {
+  title: string;
+  script: ExtractedScript;
+  characters: ExtractedCharacter[];
+  source: 'json' | 'regex' | 'default';
+}
+
+/**
+ * 从 AI 回复中提取结构化数据 — 两层策略：
+ * 1. 优先 JSON（<pipeline_data> 标签）
+ * 2. 回退正则（Markdown 格式）
+ */
+export function extractFromAIReply(
+  aiReply: string,
+  fallbackTitle: string = '剧本',
+): ExtractionResult {
+  // 策略 1：尝试 JSON 提取
+  const jsonData = extractPipelineDataJSON(aiReply);
+  if (jsonData) {
+    console.log('[PipelineExtractor] 使用 JSON 提取成功');
+    return {
+      title: jsonData.title || fallbackTitle,
+      script: jsonToScriptData(jsonData, jsonData.title || fallbackTitle),
+      characters: jsonToCharacterData(jsonData),
+      source: 'json',
+    };
+  }
+
+  // 策略 2：回退正则提取
+  const script = extractScriptFromReply(aiReply, fallbackTitle);
+  const characters = extractCharactersFromReply(aiReply);
+
+  if (script.episodes.length > 0 && script.episodes[0].scenes.length > 0
+      && script.episodes[0].scenes[0].title !== '开场'
+      || characters.length > 0) {
+    console.log('[PipelineExtractor] 使用正则提取');
+    return { title: fallbackTitle, script, characters, source: 'regex' };
+  }
+
+  // 策略 3：默认数据
+  console.log('[PipelineExtractor] 使用默认数据');
+  return {
+    title: fallbackTitle,
+    script: { title: fallbackTitle, episodes: [{ id: 'ep1', number: 1, title: fallbackTitle, scenes: generateDefaultScenes(1) }] },
+    characters: [],
+    source: 'default',
   };
 }

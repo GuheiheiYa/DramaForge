@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import {
-  extractScriptFromReply,
-  extractCharactersFromReply,
+  extractFromAIReply,
   extractProjectTitle,
 } from '@/lib/pipeline-data-extractor';
 import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
@@ -219,7 +218,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const systemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
 你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
-回复要详细、专业、有创意。如果用户要求生成完整剧本或制作漫剧，请给出结构化的内容。`;
+回复要详细、专业、有创意。
+
+【重要】当用户要求生成剧本、角色、分镜等创作内容时，在回复末尾追加一个 \`<pipeline_data>\` JSON 块，格式如下：
+\`\`\`<pipeline_data>
+{
+  "title": "项目标题",
+  "episodes": [
+    {
+      "number": 1,
+      "title": "集标题",
+      "scenes": [
+        {
+          "title": "场景名",
+          "location": "地点",
+          "time_tag": "时间（清晨/上午/下午/傍晚/夜晚等）",
+          "summary": "场景摘要描述"
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "角色名",
+      "role": "主角/配角/龙套",
+      "gender": "男/女",
+      "age": 18,
+      "description": "角色简介",
+      "personality": "性格描述",
+      "personality_traits": ["特征1", "特征2"],
+      "appearance": "外貌描述",
+      "costume": "服装描述"
+    }
+  ]
+}
+\`\`\`</pipeline_data>
+
+确保 JSON 格式正确，episode/scene/character 数量根据内容实际需要设定。`;
 
     const abortController = new AbortController();
     currentAbortController = abortController;
@@ -474,25 +509,24 @@ async function fetchStreamResponse(
 
     // Second: if creation request, inject plan card (separate setState to avoid race)
     if (isCreationRequest) {
-      // 从 AI 回复中提取结构化数据
+      // 从 AI 回复中提取结构化数据（JSON 优先 → 正则回退 → 默认值）
       const title = extractProjectTitle(projectTitle);
-      const scriptData = extractScriptFromReply(finalContent, title);
-      const charList = extractCharactersFromReply(finalContent);
+      const result = extractFromAIReply(finalContent, title);
 
-      console.error('[Pipeline] Extracted data:', {
-        title,
+      console.log('[Pipeline] 提取数据 (source=' + result.source + '):', {
+        title: result.title,
         contentLength: finalContent.length,
-        episodesCount: scriptData.episodes.length,
-        episodes: scriptData.episodes.map(ep => ({ num: ep.number, title: ep.title, scenes: ep.scenes.length })),
-        charactersCount: charList.length,
-        characters: charList.map(c => c.name),
+        episodesCount: result.script.episodes.length,
+        episodes: result.script.episodes.map(ep => ({ num: ep.number, title: ep.title, scenes: ep.scenes.length })),
+        charactersCount: result.characters.length,
+        characters: result.characters.map(c => ({ name: c.name, role: c.role, desc: c.description.slice(0, 30) })),
       });
 
       // 更新 store 中的提取数据
       useChatStore.setState({
-        extractedScript: { episodes: scriptData.episodes },
-        extractedCharacters: { characters: charList },
-        extractedTitle: title,
+        extractedScript: { episodes: result.script.episodes },
+        extractedCharacters: { characters: result.characters },
+        extractedTitle: result.title,
       });
 
       setTimeout(() => {

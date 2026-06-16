@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-16 20:10:00 — R-051 AI 回复结构化 JSON 提取
+
+**需求**: [R-051]
+**设计**: [D-003]
+**修改文件**:
+- `app/src/store/useChatStore.ts` — System Prompt 要求 AI 输出 `<pipeline_data>` JSON 块
+- `app/src/lib/pipeline-data-extractor.ts` — 新增 extractFromAIReply() 两层策略：JSON 优先 → 正则回退
+- `app/src/store/usePipelineStore.ts` — CharacterData 扩展 gender/age/personality/appearance/costume 字段
+
+**变更摘要**:
+- System Prompt 要求 AI 在创作回复末尾追加 `<pipeline_data>` JSON 块，包含结构化的 episodes + characters
+- 新增 extractFromAIReply() 统一提取入口：优先解析 JSON，回退正则，最终回退默认值
+- JSON 提取支持完整的角色字段：name/role/gender/age/description/personality/personality_traits/appearance/costume
+- 正则提取器 createCharacter() 同步扩展新字段（默认空值）
+- finishStream 改用 extractFromAIReply()，日志输出提取来源（json/regex/default）
+
+---
+
 ## 2026-06-16 19:45:00 — Pipeline 真实执行设计方案 + API Key 管理优化
 
 **需求**: [R-029], [R-051]~[R-055]

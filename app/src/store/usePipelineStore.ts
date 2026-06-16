@@ -43,6 +43,12 @@ export interface CharacterData {
     name: string;
     role: '主角' | '配角' | '龙套';
     description: string;
+    gender?: string;
+    age?: number;
+    personality?: string;
+    personalityTraits?: string[];
+    appearance?: string;
+    costume?: string;
     status: 'waiting' | 'generating' | 'done';
     avatarColor: string;
   }>;
