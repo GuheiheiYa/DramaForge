@@ -105,7 +105,7 @@ class OpenAICompatibleProvider(LLMProvider):
 _providers: dict[str, LLMProvider] = {
     "mimo": OpenAICompatibleProvider(
         base_url=settings.MIMO_BASE_URL,
-        api_key=settings.MIMO_API_KEY,
+        api_key=settings.APP_MIMO_API_KEY,
         default_model="mimo-v2-pro",
     ),
     "deepseek": OpenAICompatibleProvider(

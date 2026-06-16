@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
-    # AI API Keys
-    MIMO_API_KEY: str = "tp-cydnl4md88iv16cqaopj5eapavf92ny8lnlh1ngm3q7pcshu"
+    # AI API Keys（通过 .env 文件配置，键名加 APP_ 前缀避免系统环境变量冲突）
+    APP_MIMO_API_KEY: str = ""
     MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
 
     DEEPSEEK_API_KEY: str = ""
@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # 可灵AI
     KLING_API_KEY: str = ""
 
-    # Agnes 图像生成
-    AGNES_API_KEY: str = "sk-2q0XYuDeANEnCSzuWNCshXoT4eUm4Ei3sPSBVKmZoXS1Vsh4"
+    # Agnes 图像生成（通过 .env 文件配置）
+    AGNES_API_KEY: str = ""
     AGNES_BASE_URL: str = "https://apihub.agnes-ai.com"
     AGNES_MODEL: str = "agnes-image-2.1-flash"
 

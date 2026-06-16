@@ -1,5 +1,28 @@
 # 更新日志
 
+## 2026-06-16 19:45:00 — Pipeline 真实执行设计方案 + API Key 管理优化
+
+**需求**: [R-029], [R-051]~[R-055]
+**设计**: [D-003]
+**问题**: [ISS-012]（新建）
+**修改文件**:
+- `docs/design/pipeline-real-execution-design.md` — 新建，[D-003] Pipeline 真实执行设计方案
+- `docs/requirements.md` — 新增 R-051~R-055，R-029 标记 🔄
+- `docs/issues.md` — 新建 [ISS-012] Pipeline 执行全是前端模拟
+- `docs/navigation.md` — 新增 D-003 设计文件
+- `backend/app/config.py` — API Key 改用 APP_ 前缀避免系统环境变量冲突
+- `backend/app/services/llm_service.py` — 适配 APP_MIMO_API_KEY
+- `backend/.env` — 新建，统一管理 API Key
+- `backend/.env.example` — 更新模板
+
+**变更摘要**:
+- 编写 [D-003] Pipeline 真实执行设计方案：架构、前后端改造、三种模式、SSE 进度推送
+- 新增需求 R-051~R-055：结构化 JSON 提取、真实 API 调用、异步执行、模式区分、容错恢复
+- API Key 从 config.py 硬编码迁移到 .env 文件管理
+- 解决系统环境变量 MIMO_API_KEY 覆盖 .env 值的问题（键名加 APP_ 前缀）
+
+---
+
 ## 2026-06-16 15:40:00 — 聊天支持图生图 + 视频异步轮询修复
 
 **需求**: [R-023], [R-044]

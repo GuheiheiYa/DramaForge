@@ -2,6 +2,19 @@
 
 ## Open（未解决）
 
+### [ISS-012] Pipeline 执行全是前端模拟，数据未真实提取和执行
+- **关联需求**: [R-029], [R-012]
+- **关联功能**: [F-012] Chat Studio
+- **问题描述**:
+  1. `simulatePipeline()` 使用 setTimeout 模拟 6 步，不调用后端 pipeline_service
+  2. AI 回复数据提取使用正则解析，质量差（场景 location/timeTag 全是默认值，角色只有名字）
+  3. 步骤 4-6（视频/配音/合成）是硬编码 mock 数据
+  4. 三种执行模式（auto/confirm/preview）行为完全一样
+  5. 后端 pipeline_service.py 已实现 6 步编排但未被调用
+- **设计方案**: [D-003] Pipeline 真实执行设计方案
+- **状态**: open
+- **记录时间**: 2026-06-16 19:45:00
+
 ### [ISS-001] 项目数据全部为 mock
 - **关联需求**: [R-001]
 - **关联功能**: [F-001] 项目 Dashboard

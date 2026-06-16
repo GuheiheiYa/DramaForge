@@ -86,7 +86,7 @@
 | R-026 | SSE 实时进度推送 | P1 | ⏳ | — | 只 yield 一次快照，无轮询 |
 | R-027 | 项目上下文传递（Dashboard → 各页面） | P1 | ⏳ | — | selectedProjectId 未被使用 |
 | R-028 | 多模型配置（DeepSeek/Claude/GPT/Kimi/Gemini） | P2 | ⏳ | — | 实际只有 MiMo 可用 |
-| R-029 | Pipeline 6 步真实执行（替代前端模拟） | P0 | ⏳ | — | 依赖 R-022~R-025 |
+| R-029 | Pipeline 6 步真实执行（替代前端模拟） | P0 | 🔄 | [D-003] | pipeline_service.py 已写好但未接入，前端 simulatePipeline 是 setTimeout 模拟 |
 | R-030 | 数据库 12 张表全量 CRUD | P0 | 🔄 | — | 4 张表已对接，8 张表待对接 |
 
 ---
@@ -134,6 +134,16 @@
 | R-044 | 即梦AI 图像生成接入 | P0 | ✅ | [F-015] | 已接入 Agnes 图像模型，角色立绘可生成 |
 | R-045 | 火山引擎 TTS 配音接入 | P1 | ⏳ | 需要 API Key |
 | R-046 | Celery 异步任务队列 | P0 | ⏳ | 需要 Redis |
+
+### Pipeline 真实执行 [R-051 ~ R-055]
+
+| ID | 需求描述 | 优先级 | 状态 | 关联 | 备注 |
+|----|---------|--------|------|------|------|
+| R-051 | AI 回复结构化 JSON 提取（替代正则） | P0 | ⏳ | [D-003] | 修改 System Prompt 要求 JSON 输出 + 前端优先 JSON.parse |
+| R-052 | 前端 Pipeline 真实 API 调用（替代 simulatePipeline） | P0 | ⏳ | [D-003] | 移除 setTimeout，调用 /pipeline/start + SSE 监听 |
+| R-053 | 后端 Pipeline 异步执行 + SSE 进度推送 | P0 | ⏳ | [D-003] | asyncio.create_task 替代 Celery，实时推送每步进度 |
+| R-054 | 三种执行模式区分（auto/confirm/preview） | P0 | ⏳ | [D-003] | auto 全自动，confirm 每步暂停等确认，preview 只提取不生成 |
+| R-055 | Pipeline 失败重试 + 跳过机制 | P1 | ⏳ | [D-003] | 某步失败可重试或跳过，不影响已完成步骤 |
 
 ---
 
