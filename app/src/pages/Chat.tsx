@@ -334,8 +334,20 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
           ) : message.imageUrl ? (
             <div className="rounded-2xl rounded-bl-sm overflow-hidden shadow-sm border border-[#EFEDEB] bg-white">
               <img src={message.imageUrl} alt="AI 生成图片" className="max-w-full max-h-[400px] object-contain" />
-              <div className="px-4 py-2 text-[12px] text-[#A8A39E] border-t border-[#EFEDEB]">
-                {message.content || 'AI 生成的图片'}
+              <div className="px-4 py-2 text-[12px] text-[#A8A39E] border-t border-[#EFEDEB] flex items-center justify-between">
+                <span>{message.content || 'AI 生成的图片'}</span>
+                <button
+                  onClick={() => {
+                    const url = message.imageUrl || '';
+                    if (url) {
+                      const fill = (window as Record<string, unknown>).__chatFillInput as ((t: string) => void) | undefined;
+                      fill?.(`/image @${url} `);
+                    }
+                  }}
+                  className="text-[11px] text-[#A8835F] hover:text-[#8E6A48] font-medium flex items-center gap-1 transition-colors"
+                >
+                  <Wand2 size={11} /> 以此图修改
+                </button>
               </div>
             </div>
           ) : (
@@ -537,26 +549,33 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
 
     const text = input.trim();
 
-    // /image 命令 — 直接生成图片
+    // /image 命令 — 文生图 or 图生图
     if (text.startsWith('/image ')) {
-      const prompt = text.slice(7).trim();
-      if (prompt) {
-        generateImageInChat(prompt);
-        setInput('');
-        if (inputRef.current) inputRef.current.style.height = 'auto';
-        return;
+      const rest = text.slice(7).trim();
+      // 解析 /image @url 描述 — 图生图
+      const imgMatch = rest.match(/^@(\S+)\s+(.+)$/);
+      if (imgMatch) {
+        generateImageInChat(imgMatch[2], imgMatch[1]);
+      } else if (rest) {
+        generateImageInChat(rest);
       }
+      setInput('');
+      if (inputRef.current) inputRef.current.style.height = 'auto';
+      return;
     }
 
     // /video 命令 — 直接生成视频
     if (text.startsWith('/video ')) {
-      const prompt = text.slice(7).trim();
-      if (prompt) {
-        generateVideoInChat(prompt);
-        setInput('');
-        if (inputRef.current) inputRef.current.style.height = 'normal';
-        return;
+      const rest = text.slice(7).trim();
+      const vidMatch = rest.match(/^@(\S+)\s+(.+)$/);
+      if (vidMatch) {
+        generateVideoInChat(vidMatch[2], vidMatch[1]);
+      } else if (rest) {
+        generateVideoInChat(rest);
       }
+      setInput('');
+      if (inputRef.current) inputRef.current.style.height = 'auto';
+      return;
     }
 
     sendMessage(text);

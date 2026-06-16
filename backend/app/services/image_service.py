@@ -83,16 +83,26 @@ def _build_prompt(character_info: dict) -> str:
     return prompt
 
 
-async def generate_image(prompt: str, size: str = "1024x1024") -> str:
-    """通用图片生成 — 直接使用 prompt 调用 Agnes API，返回图片 URL。"""
+async def generate_image(prompt: str, size: str = "1024x1024", image_url: str | None = None) -> str:
+    """通用图片生成 — 支持文生图和图生图。
+
+    Args:
+        prompt: 文本描述。
+        size: 图片尺寸。
+        image_url: 参考图片 URL（图生图模式），为 None 时为文生图。
+    """
     url = f"{settings.AGNES_BASE_URL}/v1/images/generations"
-    payload = {
+    payload: dict = {
         "model": settings.AGNES_MODEL,
         "prompt": prompt,
         "size": size,
     }
 
-    logger.info("[Agnes] 调用图像生成: %s (prompt=%s...)", url, prompt[:60])
+    # 图生图：通过 extra_body.image 传入参考图
+    if image_url:
+        payload["extra_body"] = {"image": [image_url]}
+
+    logger.info("[Agnes] 调用图像生成: %s (mode=%s, prompt=%s...)", url, "图生图" if image_url else "文生图", prompt[:60])
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(

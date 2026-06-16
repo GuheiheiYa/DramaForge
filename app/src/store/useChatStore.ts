@@ -101,7 +101,7 @@ interface ChatState {
   setDeepThink: (v: boolean) => void;
   getCurrentSession: () => ChatSession | null;
   updateExtractedData: (data: { script?: ScriptData; characters?: CharacterData; title?: string }) => void;
-  generateImageInChat: (prompt: string) => void;
+  generateImageInChat: (prompt: string, imageUrl?: string) => void;
   generateVideoInChat: (prompt: string, imageUrl?: string) => void;
 }
 
@@ -307,7 +307,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   // ─── 图片生成 ───
-  generateImageInChat: (prompt) => {
+  generateImageInChat: (prompt, imageUrl) => {
     const state = get();
     let sessionId = state.currentSessionId;
     if (!sessionId) sessionId = state.createSession();
@@ -315,9 +315,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
+    const isImg2Img = !!imageUrl;
+
     // 用户消息
     const userMsg: ChatMessage = {
-      id: generateId(), role: 'user', content: `🎨 生成图片：${prompt}`, timestamp: timeStr,
+      id: generateId(), role: 'user',
+      content: isImg2Img ? `🎨 修改图片：${prompt}` : `🎨 生成图片：${prompt}`,
+      timestamp: timeStr,
     };
 
     // 加载中占位消息
@@ -333,8 +337,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }),
     }));
 
-    // 调用后端图片生成 API
-    generateImage(prompt)
+    // 调用后端图片生成 API（文生图 or 图生图）
+    generateImage(prompt, undefined, imageUrl)
       .then((data) => {
         set((s) => ({
           isGenerating: false,

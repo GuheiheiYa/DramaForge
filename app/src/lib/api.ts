@@ -244,10 +244,10 @@ export const generateCharacterImage = (characterId: string) =>
     { method: 'POST', body: JSON.stringify({ character_id: characterId }) }
   );
 
-export const generateImage = (prompt: string, size?: string) =>
+export const generateImage = (prompt: string, size?: string, imageUrl?: string) =>
   request<{ image_url: string }>(
     '/images/generate',
-    { method: 'POST', body: JSON.stringify({ prompt, size: size || '1024x1024' }) }
+    { method: 'POST', body: JSON.stringify({ prompt, size: size || '1024x1024', image_url: imageUrl || null }) }
   );
 
 // ─── Video Generation API ───

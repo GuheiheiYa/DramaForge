@@ -20,9 +20,10 @@ router = APIRouter()
 # ─── 通用文本生图 ───
 
 class GenerateImageRequest(BaseModel):
-    """通用图片生成请求（文本 prompt）。"""
+    """通用图片生成请求 — 支持文生图和图生图。"""
     prompt: str
     size: str = "1024x1024"
+    image_url: str | None = None   # 图生图：参考图片 URL
 
 
 class GenerateImageResponse(BaseModel):
@@ -32,9 +33,13 @@ class GenerateImageResponse(BaseModel):
 
 @router.post("/generate", response_model=GenerateImageResponse)
 async def api_generate_image(req: GenerateImageRequest):
-    """根据文本 prompt 直接生成图片（聊天场景使用）。"""
+    """生成图片（文生图 / 图生图）。
+
+    - 仅 prompt → 文生图
+    - prompt + image_url → 图生图（以参考图为基础修改）
+    """
     try:
-        image_url = await generate_image(prompt=req.prompt, size=req.size)
+        image_url = await generate_image(prompt=req.prompt, size=req.size, image_url=req.image_url)
     except RuntimeError as e:
         logger.error("[Images] 生成失败: %s", str(e))
         raise HTTPException(status_code=500, detail=f"图像生成失败: {str(e)}")
