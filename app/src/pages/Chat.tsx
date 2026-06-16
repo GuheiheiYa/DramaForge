@@ -1181,7 +1181,6 @@ export default function Chat() {
       toastSuccess('Pipeline 全部完成！');
     }
   };
-  };
 
   // Build chat messages including pipeline-related ones
   const allMessages = [...messages];
