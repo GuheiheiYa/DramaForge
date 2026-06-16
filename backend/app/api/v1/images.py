@@ -10,12 +10,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.db_models import Character
-from app.services.image_service import generate_character_image
+from app.services.image_service import generate_character_image, generate_image
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+# ─── 通用文本生图 ───
+
+class GenerateImageRequest(BaseModel):
+    """通用图片生成请求（文本 prompt）。"""
+    prompt: str
+    size: str = "1024x1024"
+
+
+class GenerateImageResponse(BaseModel):
+    """图片生成响应。"""
+    image_url: str
+
+
+@router.post("/generate", response_model=GenerateImageResponse)
+async def api_generate_image(req: GenerateImageRequest):
+    """根据文本 prompt 直接生成图片（聊天场景使用）。"""
+    try:
+        image_url = await generate_image(prompt=req.prompt, size=req.size)
+    except RuntimeError as e:
+        logger.error("[Images] 生成失败: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"图像生成失败: {str(e)}")
+
+    return GenerateImageResponse(image_url=image_url)
+
+
+# ─── 角色形象生成 ───
 
 class GenerateCharacterImageRequest(BaseModel):
     """生成角色形象请求。"""

@@ -1,5 +1,23 @@
 # 更新日志
 
+## 2026-06-16 15:20:00 — 聊天页面接入图片/视频生成 + 媒体消息渲染
+
+**需求**: [R-023], [R-044]
+**修改文件**:
+- `backend/app/api/v1/images.py` — 新增 POST /images/generate 通用文本生图端点
+- `backend/app/services/image_service.py` — 提取 generate_image() 通用函数
+- `app/src/lib/api.ts` — 新增 generateImage() 前端 API 函数
+- `app/src/store/useChatStore.ts` — ChatMessage 扩展 imageUrl/videoUrl，新增 generateImageInChat/generateVideoInChat
+- `app/src/pages/Chat.tsx` — MessageBubble 渲染 image/video 消息，输入区添加图片/视频快捷按钮
+
+**变更摘要**:
+- Chat 输入区新增图片(Wand2)/视频(Film)快捷按钮，点击填充 `/image` 或 `/video` 命令
+- `/image + 描述` 直接生成图片，渲染在 AI 回复气泡中
+- `/video + 描述` 直接生成视频，带播放控件
+- 后端新增通用文本生图端点 POST /images/generate
+
+---
+
 ## 2026-06-16 14:50:00 — Agnes 图像/视频生成接入 + await 优先级 Bug 修复
 
 **需求**: [R-023], [R-044]

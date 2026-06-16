@@ -5,6 +5,7 @@ import {
   extractProjectTitle,
 } from '@/lib/pipeline-data-extractor';
 import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
+import { generateVideo, generateImage } from '@/lib/api';
 
 export interface ChatMessage {
   id: string;
@@ -14,7 +15,9 @@ export interface ChatMessage {
   timestamp: string;
   model?: string;
   isStreaming?: boolean;    // 是否正在流式输出中
-  type?: 'text' | 'plan_card';  // 消息类型
+  type?: 'text' | 'plan_card' | 'image' | 'video';  // 消息类型
+  imageUrl?: string;       // 图片 URL（type=image 时使用）
+  videoUrl?: string;       // 视频 URL（type=video 时使用）
 }
 
 export interface ChatSession {
@@ -51,7 +54,7 @@ function generateId() {
 }
 
 // ─── API ───
-const API_BASE = 'http://localhost:7778/api/v1';
+const API_BASE = 'http://localhost:7779/api/v1';
 
 const modelToProvider: Record<string, string> = {
   'mimo': 'mimo',
@@ -98,6 +101,8 @@ interface ChatState {
   setDeepThink: (v: boolean) => void;
   getCurrentSession: () => ChatSession | null;
   updateExtractedData: (data: { script?: ScriptData; characters?: CharacterData; title?: string }) => void;
+  generateImageInChat: (prompt: string) => void;
+  generateVideoInChat: (prompt: string, imageUrl?: string) => void;
 }
 
 const defaultModel = 'mimo';
@@ -300,6 +305,116 @@ export const useChatStore = create<ChatState>((set, get) => ({
       extractedTitle: data.title ?? s.extractedTitle,
     }));
   },
+
+  // ─── 图片生成 ───
+  generateImageInChat: (prompt) => {
+    const state = get();
+    let sessionId = state.currentSessionId;
+    if (!sessionId) sessionId = state.createSession();
+
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    // 用户消息
+    const userMsg: ChatMessage = {
+      id: generateId(), role: 'user', content: `🎨 生成图片：${prompt}`, timestamp: timeStr,
+    };
+
+    // 加载中占位消息
+    const loadingMsg: ChatMessage = {
+      id: generateId(), role: 'assistant', content: '', timestamp: timeStr,
+      type: 'image', imageUrl: '', isStreaming: true,
+    };
+
+    set((s) => ({
+      isGenerating: true,
+      sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+        ...ss, messages: [...ss.messages, userMsg, loadingMsg], updatedAt: timeStr,
+      }),
+    }));
+
+    // 调用后端图片生成 API
+    generateImage(prompt)
+      .then((data) => {
+        set((s) => ({
+          isGenerating: false,
+          sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+            ...ss, messages: ss.messages.map((m) =>
+              m.id === loadingMsg.id ? { ...m, isStreaming: false, imageUrl: data.image_url, content: data.image_url ? '' : '生成失败' } : m
+            ),
+          }),
+        }));
+      })
+      .catch((err) => {
+        console.error('[Chat] 图片生成失败:', err);
+        set((s) => ({
+          isGenerating: false,
+          sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+            ...ss, messages: ss.messages.map((m) =>
+              m.id === loadingMsg.id ? { ...m, isStreaming: false, content: `❌ 图片生成失败：${err.message}` } : m
+            ),
+          }),
+        }));
+      });
+  },
+
+  // ─── 视频生成 ───
+  generateVideoInChat: (prompt, imageUrl) => {
+    const state = get();
+    let sessionId = state.currentSessionId;
+    if (!sessionId) sessionId = state.createSession();
+
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    const userMsg: ChatMessage = {
+      id: generateId(), role: 'user',
+      content: imageUrl ? `🎬 图生视频：${prompt}` : `🎬 生成视频：${prompt}`,
+      timestamp: timeStr,
+    };
+
+    const loadingMsg: ChatMessage = {
+      id: generateId(), role: 'assistant', content: '', timestamp: timeStr,
+      type: 'video', videoUrl: '', isStreaming: true,
+    };
+
+    set((s) => ({
+      isGenerating: true,
+      sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+        ...ss, messages: [...ss.messages, userMsg, loadingMsg], updatedAt: timeStr,
+      }),
+    }));
+
+    generateVideo({
+      prompt,
+      image_url: imageUrl,
+      width: 1152,
+      height: 768,
+      num_frames: 121,
+      frame_rate: 24,
+    })
+      .then((data) => {
+        set((s) => ({
+          isGenerating: false,
+          sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+            ...ss, messages: ss.messages.map((m) =>
+              m.id === loadingMsg.id ? { ...m, isStreaming: false, videoUrl: data.video_url, content: data.video_url ? '' : '生成失败' } : m
+            ),
+          }),
+        }));
+      })
+      .catch((err) => {
+        console.error('[Chat] 视频生成失败:', err);
+        set((s) => ({
+          isGenerating: false,
+          sessions: s.sessions.map((ss) => ss.id !== sessionId ? ss : {
+            ...ss, messages: ss.messages.map((m) =>
+              m.id === loadingMsg.id ? { ...m, isStreaming: false, content: `❌ 视频生成失败：${err.message}` } : m
+            ),
+          }),
+        }));
+      });
+  },
 }));
 
 // ─── Streaming fetch ───
@@ -496,6 +611,6 @@ async function fetchStreamResponse(
       // 用户取消，cancelGeneration 已处理状态和 plan_card 注入
       return;
     }
-    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:7778）`);
+    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:7779）`);
   }
 }

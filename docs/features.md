@@ -237,7 +237,7 @@
 
 ## [F-011] AI 对话页面 ← [R-011]
 
-**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-16 15:20:00
 
 **实现方式**:
 - 悬浮输入框（毛玻璃效果、虚线分隔工具栏）
@@ -245,11 +245,13 @@
 - 多会话管理（侧边栏历史会话折叠展开）
 - + 号上传菜单（Portal 渲染，不被裁剪）
 - 空状态引导（6 个快捷填充选项）
+- **图片/视频生成**：输入区 Wand2（图片）+ Film（视频）快捷按钮，支持 `/image` 和 `/video` 命令
+- **媒体消息渲染**：MessageBubble 支持 image/video 类型，图片/视频内联显示
 
 **关联文件**:
-- `src/pages/Chat.tsx`
-- `src/store/useChatStore.ts`
-- `src/components/AppSidebar.tsx`
+- `app/src/pages/Chat.tsx`
+- `app/src/store/useChatStore.ts`
+- `app/src/components/AppSidebar.tsx`
 
 ---
 

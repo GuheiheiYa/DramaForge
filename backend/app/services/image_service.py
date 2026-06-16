@@ -83,29 +83,16 @@ def _build_prompt(character_info: dict) -> str:
     return prompt
 
 
-async def generate_character_image(character_info: dict) -> str:
-    """根据角色信息调用 Agnes API 生成形象图片，返回图片 URL。
-
-    Args:
-        character_info: 角色信息字典，包含 name, gender, age, appearance,
-                        costume, personality_traits, description, role 等字段。
-
-    Returns:
-        图片 URL。
-
-    Raises:
-        RuntimeError: API 调用失败时抛出。
-    """
-    prompt = _build_prompt(character_info)
-
+async def generate_image(prompt: str, size: str = "1024x1024") -> str:
+    """通用图片生成 — 直接使用 prompt 调用 Agnes API，返回图片 URL。"""
     url = f"{settings.AGNES_BASE_URL}/v1/images/generations"
     payload = {
         "model": settings.AGNES_MODEL,
         "prompt": prompt,
-        "size": "1024x1024",
+        "size": size,
     }
 
-    logger.info("[Agnes] 调用图像生成: %s", url)
+    logger.info("[Agnes] 调用图像生成: %s (prompt=%s...)", url, prompt[:60])
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
@@ -124,19 +111,22 @@ async def generate_character_image(character_info: dict) -> str:
 
         data = resp.json()
 
-    # 解析 OpenAI 格式响应
     image_data = data.get("data", [])
     if not image_data:
         raise RuntimeError("Agnes API 返回空数据")
 
     image_url = image_data[0].get("url", "")
     if not image_url:
-        # 可能返回 base64
         b64 = image_data[0].get("b64_json", "")
         if b64:
-            # TODO: 如果需要，可以将 base64 保存为文件
             raise RuntimeError("Agnes API 返回 base64 数据，暂不支持")
         raise RuntimeError("Agnes API 返回的数据中无 url 字段")
 
     logger.info("[Agnes] 图像生成成功: %s", image_url[:80])
     return image_url
+
+
+async def generate_character_image(character_info: dict) -> str:
+    """根据角色信息生成形象图片 — 自动构建 prompt 后调用 generate_image。"""
+    prompt = _build_prompt(character_info)
+    return await generate_image(prompt)

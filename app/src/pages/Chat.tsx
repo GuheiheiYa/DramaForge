@@ -6,7 +6,7 @@ import {
   Send, Plus, Sparkles, Bot, User, Copy, RefreshCw, Check,
   Image as ImageIcon, FileVideo, Paperclip, ChevronDown, Mic,
   X, Eye, Rocket, Hand, EyeOff,
-  Brain, StopCircle, Loader2, FolderOpen,
+  Brain, StopCircle, Loader2, FolderOpen, Wand2, Film,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useChatStore, modelOptions, skillOptions, type ChatMessage } from '@/store/useChatStore';
@@ -316,6 +316,70 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
     );
   }
 
+  // Image message — render generated image
+  if (message.type === 'image') {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+          <Bot size={18} className="text-white" />
+        </div>
+        <div className="max-w-[75%]">
+          {message.isStreaming ? (
+            <div className="px-5 py-4 rounded-2xl rounded-bl-sm bg-white shadow-sm border border-[#EFEDEB]">
+              <div className="flex items-center gap-2 text-[13px] text-[#A8A39E]">
+                <Loader2 size={14} className="animate-spin text-[#A8835F]" />
+                图片生成中...
+              </div>
+            </div>
+          ) : message.imageUrl ? (
+            <div className="rounded-2xl rounded-bl-sm overflow-hidden shadow-sm border border-[#EFEDEB] bg-white">
+              <img src={message.imageUrl} alt="AI 生成图片" className="max-w-full max-h-[400px] object-contain" />
+              <div className="px-4 py-2 text-[12px] text-[#A8A39E] border-t border-[#EFEDEB]">
+                {message.content || 'AI 生成的图片'}
+              </div>
+            </div>
+          ) : (
+            <div className="px-5 py-3 rounded-2xl rounded-bl-sm bg-white shadow-sm border border-[#EFEDEB] text-[13px] text-[#B85C50]">
+              {message.content || '图片生成失败'}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Video message — render generated video
+  if (message.type === 'video') {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+          <Bot size={18} className="text-white" />
+        </div>
+        <div className="max-w-[75%]">
+          {message.isStreaming ? (
+            <div className="px-5 py-4 rounded-2xl rounded-bl-sm bg-white shadow-sm border border-[#EFEDEB]">
+              <div className="flex items-center gap-2 text-[13px] text-[#A8A39E]">
+                <Loader2 size={14} className="animate-spin text-[#A8835F]" />
+                视频生成中...
+              </div>
+            </div>
+          ) : message.videoUrl ? (
+            <div className="rounded-2xl rounded-bl-sm overflow-hidden shadow-sm border border-[#EFEDEB] bg-white">
+              <video src={message.videoUrl} controls className="w-full max-h-[400px]" />
+              <div className="px-4 py-2 text-[12px] text-[#A8A39E] border-t border-[#EFEDEB]">
+                {message.content || 'AI 生成的视频'}
+              </div>
+            </div>
+          ) : (
+            <div className="px-5 py-3 rounded-2xl rounded-bl-sm bg-white shadow-sm border border-[#EFEDEB] text-[13px] text-[#B85C50]">
+              {message.content || '视频生成失败'}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0, 0, 0.2, 1] as [number, number, number, number] }}
       className={cn('flex gap-3 group', isUser ? 'justify-end' : 'justify-start')}>
@@ -446,6 +510,8 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
   const createSession = useChatStore((s) => s.createSession);
   const currentModel = useChatStore((s) => s.currentModel);
   const currentSkill = useChatStore((s) => s.currentSkill);
+  const generateImageInChat = useChatStore((s) => s.generateImageInChat);
+  const generateVideoInChat = useChatStore((s) => s.generateVideoInChat);
   const pipelineStatus = usePipelineStore((s) => s.status);
 
   const [input, setInput] = useState('');
@@ -468,11 +534,36 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
       setInput('');
       return;
     }
-    sendMessage(input);
+
+    const text = input.trim();
+
+    // /image 命令 — 直接生成图片
+    if (text.startsWith('/image ')) {
+      const prompt = text.slice(7).trim();
+      if (prompt) {
+        generateImageInChat(prompt);
+        setInput('');
+        if (inputRef.current) inputRef.current.style.height = 'auto';
+        return;
+      }
+    }
+
+    // /video 命令 — 直接生成视频
+    if (text.startsWith('/video ')) {
+      const prompt = text.slice(7).trim();
+      if (prompt) {
+        generateVideoInChat(prompt);
+        setInput('');
+        if (inputRef.current) inputRef.current.style.height = 'normal';
+        return;
+      }
+    }
+
+    sendMessage(text);
     setInput('');
     setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = 'auto';
-  }, [input, isGenerating, currentSessionId, sendMessage, createSession, pipelineStatus]);
+  }, [input, isGenerating, currentSessionId, sendMessage, createSession, pipelineStatus, generateImageInChat, generateVideoInChat]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
   const handleUploadSelect = (type: string) => { toastInfo(`${type}上传功能（模拟）`); setAttachments((prev) => [...prev, `${type}-${Date.now()}`]); setShowUpload(false); };
@@ -505,6 +596,22 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
             <div className="flex items-center gap-1">
               <button ref={uploadBtnRef} onClick={() => setShowUpload(!showUpload)} disabled={isGenerating}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-[#A8A39E] hover:text-[#A8835F] hover:bg-[#F5EDE6] transition-all disabled:opacity-50"><Plus size={18} /></button>
+              <button
+                onClick={() => { setInput('/image '); inputRef.current?.focus(); }}
+                disabled={isGenerating}
+                title="生成图片 — /image + 描述"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-[#A8A39E] hover:text-[#A8835F] hover:bg-[#F5EDE6] transition-all disabled:opacity-50"
+              >
+                <Wand2 size={15} />
+              </button>
+              <button
+                onClick={() => { setInput('/video '); inputRef.current?.focus(); }}
+                disabled={isGenerating}
+                title="生成视频 — /video + 描述"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all disabled:opacity-50"
+              >
+                <Film size={15} />
+              </button>
               <button disabled={isGenerating} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all disabled:opacity-50"><Mic size={16} /></button>
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-[#C5C1BC]">
