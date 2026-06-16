@@ -1,5 +1,25 @@
 # 更新日志
 
+## 2026-06-16 20:30:00 — R-052 Pipeline 真实 API 调用（替代 setTimeout 模拟）
+
+**需求**: [R-052], [R-053]
+**设计**: [D-003]
+**修改文件**:
+- `app/src/pages/Chat.tsx` — simulatePipeline() 重写为 async 真实 API 调用
+- `app/src/pages/Chat.tsx` — 新增 generateVideo 导入，await simulatePipeline
+
+**变更摘要**:
+- simulatePipeline() 从 6 个 setTimeout 改为顺序 async 执行
+- 步骤 1（剧本）：使用 extractedScript + savePipelineScript 保存数据库
+- 步骤 2（角色）：使用 extractedCharacters + savePipelineCharacters 保存数据库
+- 步骤 3（分镜）：从剧本派生 + savePipelineStoryboard 保存数据库
+- 步骤 4（视频）：逐个调用 Agnes generateVideo API，实时更新进度
+- 步骤 5-6（配音/合成）：预留占位（TTS/FFmpeg 未接入）
+- preview 模式：执行完步骤 1-3 后停止，不生成视频
+- auto 模式：全部步骤自动执行
+
+---
+
 ## 2026-06-16 20:10:00 — R-051 AI 回复结构化 JSON 提取
 
 **需求**: [R-051]

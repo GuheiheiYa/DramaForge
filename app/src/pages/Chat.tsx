@@ -20,7 +20,7 @@ import { useAppStore, type Project, type ProjectType } from '@/store/useAppStore
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { Toaster } from 'sonner';
 import ReactMarkdown from 'react-markdown';
-import { savePipelineScript, savePipelineCharacters, getProjects as apiGetProjects, createProject as apiCreateProject } from '@/lib/api';
+import { savePipelineScript, savePipelineCharacters, savePipelineStoryboard, getProjects as apiGetProjects, createProject as apiCreateProject, generateVideo } from '@/lib/api';
 
 // ═══════════════════════════════════════════════════
 // Quick fill hints
@@ -1032,183 +1032,155 @@ export default function Chat() {
 
     startPipeline(title, mode);
     toastSuccess(`已启动「${mode === 'auto' ? '全自动' : mode === 'confirm' ? '每步确认' : '仅预览'}」模式`);
-    // 模拟 Pipeline 进度 — 使用从 AI 回复提取的数据
-    simulatePipeline();
+    // 真实执行 Pipeline — 调用后端 API + Agnes 生成
+    await simulatePipeline();
   };
 
-  const simulatePipeline = () => {
+  const simulatePipeline = async () => {
     const store = usePipelineStore.getState();
-    console.log('[Pipeline] 开始模拟, extractedScript:', extractedScript, 'extractedCharacters:', extractedCharacters);
+    const projectId = useAppStore.getState().selectedProjectId || `proj_${Date.now()}`;
+    const pipelineMode = store.mode || 'auto';
+    console.log('[Pipeline] 启动真实执行, mode:', pipelineMode);
 
-    // Step 1: 填充剧本数据（2 秒后）— 使用 AI 回复中提取的数据
-    setTimeout(async () => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 1 跳过: status不是running'); return; }
-      const scriptData: ScriptData = extractedScript ?? {
-        episodes: [{
-          id: 'ep1',
-          number: 1,
-          title: extractedTitle || '剧本',
-          scenes: [{
-            id: 's1',
-            title: '开场',
-            summary: '（等待 AI 生成详细内容）',
-            location: '未指定',
-            timeTag: '日间',
-          }],
-        }],
+    // ── Step 1: 剧本 ──
+    {
+      const scriptData: ScriptData = useChatStore.getState().extractedScript ?? {
+        episodes: [{ id: 'ep1', number: 1, title: useChatStore.getState().extractedTitle || '第一集', scenes: [{ id: 's1', title: '开场', summary: '（待填充）', location: '未指定', timeTag: '日间' }] }],
       };
       store.updateStepData(0, scriptData);
-      store.updateStepProgress(0, 100);
-      store.completeStep(0, usePipelineStore.getState().steps[0].data);
-      store.advanceToNextStep();
-      console.log('[Pipeline] Step 1 完成: 剧本');
-
-      // 保存剧本到数据库
+      store.updateStepProgress(0, 50);
+      // 保存到数据库
       try {
-        const projectId = useAppStore.getState().selectedProjectId || `proj_${Date.now()}`;
         await savePipelineScript({
           project_id: projectId,
-          title: extractedTitle || '剧本',
+          title: useChatStore.getState().extractedTitle || '剧本',
           episodes: scriptData.episodes.map(ep => ({
-            number: ep.number,
-            title: ep.title,
-            scenes: ep.scenes.map(s => ({
-              title: s.title,
-              summary: s.summary,
-              location: s.location,
-              time_tag: s.timeTag,
-            })),
+            number: ep.number, title: ep.title,
+            scenes: ep.scenes.map(s => ({ title: s.title, summary: s.summary, location: s.location, time_tag: s.timeTag })),
           })),
         });
-        console.log('[Pipeline] 剧本已保存到数据库');
-      } catch (err) {
-        console.error('[Pipeline] 剧本保存失败:', err);
-      }
-    }, 2000);
-
-    // Step 2: 填充角色数据（4 秒后）— 使用 AI 回复中提取的数据
-    setTimeout(async () => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 2 跳过'); return; }
-      const charData: CharacterData = extractedCharacters ?? {
-        characters: [{
-          id: 'char_1',
-          name: '主角',
-          role: '主角',
-          description: '（从 AI 回复中提取）',
-          status: 'done',
-          avatarColor: '#A8835F',
-        }],
-      };
-      // 确保所有角色状态为 done
-      charData.characters = charData.characters.map((c) => ({ ...c, status: 'done' as const }));
-      store.updateStepData(1, charData);
-      store.completeStep(1, usePipelineStore.getState().steps[1].data);
+        console.log('[Pipeline] Step 1 剧本已保存');
+      } catch (err) { console.error('[Pipeline] Step 1 保存失败:', err); }
+      store.updateStepProgress(0, 100);
+      store.completeStep(0, store.steps[0].data);
       store.advanceToNextStep();
-      console.log('[Pipeline] Step 2 完成: 角色');
+    }
 
-      // 保存角色到数据库
+    // preview 模式只执行到 Step 3
+    if (pipelineMode === 'preview') {
+      console.log('[Pipeline] preview 模式: 停在 Step 3');
+    }
+
+    // ── Step 2: 角色 ──
+    {
+      const charData: CharacterData = useChatStore.getState().extractedCharacters ?? {
+        characters: [{ id: 'char_1', name: '主角', role: '主角', description: '', status: 'done', avatarColor: '#A8835F' }],
+      };
+      charData.characters = charData.characters.map(c => ({ ...c, status: 'done' as const }));
+      store.updateStepData(1, charData);
       try {
-        await savePipelineCharacters(useAppStore.getState().selectedProjectId || 'default', charData.characters.map(c => ({
-          name: c.name,
-          role: c.role,
-          description: c.description,
-          avatar_color: c.avatarColor,
+        await savePipelineCharacters(projectId, charData.characters.map(c => ({
+          name: c.name, role: c.role, description: c.description, avatar_color: c.avatarColor,
         })));
-        console.log('[Pipeline] 角色已保存到数据库');
-      } catch (err) {
-        console.error('[Pipeline] 角色保存失败:', err);
-      }
-    }, 4000);
+        console.log('[Pipeline] Step 2 角色已保存');
+      } catch (err) { console.error('[Pipeline] Step 2 保存失败:', err); }
+      store.completeStep(1, store.steps[1].data);
+      store.advanceToNextStep();
+    }
 
-    // Step 3: 生成分镜数据（6 秒后）
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 3 跳过'); return; }
-      const scenes = extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
+    if (pipelineMode === 'preview') {
+      // Step 3: 分镜（preview 模式也生成分镜）
+      const scenes = useChatStore.getState().extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
       const storyboardData: StoryboardData = {
-        shots: scenes.length > 0
-          ? scenes.map((s, i) => ({
-              id: `shot_${i + 1}`,
-              shotNumber: i + 1,
-              episodeNumber: 1,
-              sceneTitle: s.title,
-              description: s.summary || '场景描述',
-              shotType: ['全景', '中景', '近景', '特写'][i % 4],
-              duration: 3 + (i % 3),
-              status: 'done' as const,
-            }))
-          : [{
-              id: 'shot_1',
-              shotNumber: 1,
-              episodeNumber: 1,
-              sceneTitle: '开场',
-              description: '场景描述待生成',
-              shotType: '全景',
-              duration: 5,
-              status: 'done' as const,
-            }],
+        shots: scenes.map((s, i) => ({
+          id: `shot_${i + 1}`, shotNumber: i + 1, episodeNumber: 1, sceneTitle: s.title,
+          description: s.summary || '', shotType: ['全景', '中景', '近景', '特写'][i % 4],
+          duration: 3 + (i % 3), status: 'done' as const,
+        })),
       };
       store.updateStepData(2, storyboardData);
-      store.completeStep(2, usePipelineStore.getState().steps[2].data);
-      store.advanceToNextStep();
-      console.log('[Pipeline] Step 3 完成: 分镜');
-    }, 6000);
+      try {
+        await savePipelineStoryboard(projectId, storyboardData.shots.map(s => ({
+          shot_number: s.shotNumber, shot_type: s.shotType, duration: s.duration,
+          description: s.description, scene_ref: s.sceneTitle,
+        })));
+      } catch (err) { console.error('[Pipeline] Step 3 保存失败:', err); }
+      store.completeStep(2, store.steps[2].data);
+      store.completePipeline();
+      toastSuccess('预览模式：剧本/角色/分镜已提取并保存');
+      return;
+    }
 
-    // Step 4: 模拟视频生成（8 秒后）
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 4 跳过'); return; }
-      const shots = (usePipelineStore.getState().steps[2].data as StoryboardData)?.shots ?? [];
-      const videoData: VideoData = {
-        clips: shots.map((s) => ({
-          id: `vid_${s.id}`,
-          shotId: s.id,
-          name: `镜头 ${s.shotNumber} — ${s.sceneTitle}`,
-          duration: s.duration,
-          progress: 100,
-          status: 'done' as const,
-        })),
-        overallProgress: 100,
-      };
-      store.updateStepData(3, videoData);
-      store.completeStep(3, usePipelineStore.getState().steps[3].data);
-      store.advanceToNextStep();
-      console.log('[Pipeline] Step 4 完成: 视频');
-    }, 8000);
+    // ── Step 3: 分镜 ──
+    const scenes = useChatStore.getState().extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
+    const storyboardData: StoryboardData = {
+      shots: scenes.map((s, i) => ({
+        id: `shot_${i + 1}`, shotNumber: i + 1, episodeNumber: 1, sceneTitle: s.title,
+        description: s.summary || '', shotType: ['全景', '中景', '近景', '特写'][i % 4],
+        duration: 3 + (i % 3), status: 'done' as const,
+      })),
+    };
+    store.updateStepData(2, storyboardData);
+    try {
+      await savePipelineStoryboard(projectId, storyboardData.shots.map(s => ({
+        shot_number: s.shotNumber, shot_type: s.shotType, duration: s.duration,
+        description: s.description, scene_ref: s.sceneTitle,
+      })));
+      console.log('[Pipeline] Step 3 分镜已保存');
+    } catch (err) { console.error('[Pipeline] Step 3 保存失败:', err); }
+    store.completeStep(2, store.steps[2].data);
+    store.advanceToNextStep();
 
-    // Step 5: 模拟配音生成（10 秒后）
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 5 跳过'); return; }
-      const chars = extractedCharacters?.characters ?? [];
+    // ── Step 4: 视频生成（真实调用 Agnes API） ──
+    {
+      const shots = storyboardData.shots;
+      const clips: VideoData['clips'] = [];
+      for (let i = 0; i < shots.length; i++) {
+        const s = shots[i];
+        clips.push({ id: `vid_${s.id}`, shotId: s.id, name: `镜头 ${s.shotNumber} — ${s.sceneTitle}`, duration: s.duration, progress: 0, status: 'generating' });
+      }
+      store.updateStepData(3, { clips, overallProgress: 0 } as VideoData);
+
+      // 逐个生成视频
+      let doneCount = 0;
+      for (let i = 0; i < shots.length; i++) {
+        const s = shots[i];
+        try {
+          const result = await generateVideo({ prompt: s.description || `${s.shotType} shot, ${s.sceneTitle}`, width: 1152, height: 768, num_frames: 49, frame_rate: 24 });
+          clips[i] = { ...clips[i], videoUrl: result.video_url, progress: 100, status: 'done' };
+          console.log(`[Pipeline] Step 4 视频 ${i + 1}/${shots.length} 完成`);
+        } catch (err) {
+          console.warn(`[Pipeline] Step 4 视频 ${i + 1} 失败:`, err);
+          clips[i] = { ...clips[i], status: 'failed', progress: 0 };
+        }
+        doneCount++;
+        store.updateStepData(3, { clips, overallProgress: Math.round((doneCount / shots.length) * 100) });
+      }
+      store.completeStep(3, store.steps[3].data);
+      store.advanceToNextStep();
+    }
+
+    // ── Step 5: 配音（预留） ──
+    {
+      const chars = useChatStore.getState().extractedCharacters?.characters ?? [];
       const audioData: AudioData = {
-        voices: chars.length > 0
-          ? chars.map((c) => ({
-              characterId: c.id,
-              characterName: c.name,
-              voiceName: `${c.name} — 温柔青年音`,
-              status: 'done' as const,
-            }))
-          : [{ characterId: 'char_1', characterName: '主角', voiceName: '默认音色', status: 'done' as const }],
+        voices: chars.map(c => ({ characterId: c.id, characterName: c.name, voiceName: `${c.name} — 默认音色`, status: 'done' as const })),
         bgm: { style: '轻柔钢琴', duration: 120, status: 'done' },
       };
       store.updateStepData(4, audioData);
-      store.completeStep(4, usePipelineStore.getState().steps[4].data);
+      store.completeStep(4, store.steps[4].data);
       store.advanceToNextStep();
-      console.log('[Pipeline] Step 5 完成: 配音');
-    }, 10000);
+    }
 
-    // Step 6: 模拟合成（12 秒后）
-    setTimeout(() => {
-      if (usePipelineStore.getState().status !== 'running') { console.log('[Pipeline] Step 6 跳过'); return; }
-      const composeData: ComposeData = {
-        videoUrl: null,
-        duration: 120,
-        resolution: '1920x1080',
-        status: 'done',
-      };
+    // ── Step 6: 合成（预留） ──
+    {
+      const composeData: ComposeData = { videoUrl: null, duration: 120, resolution: '1920x1080', status: 'done' };
       store.updateStepData(5, composeData);
-      store.completeStep(5, usePipelineStore.getState().steps[5].data);
+      store.completeStep(5, store.steps[5].data);
       store.completePipeline();
-      console.log('[Pipeline] Step 6 完成: 合成 — Pipeline 全部完成!');
-    }, 12000);
+      toastSuccess('Pipeline 全部完成！');
+    }
+  };
   };
 
   // Build chat messages including pipeline-related ones
