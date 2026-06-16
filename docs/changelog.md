@@ -1,5 +1,24 @@
 # 更新日志
 
+## 2026-06-16 15:40:00 — 聊天支持图生图 + 视频异步轮询修复
+
+**需求**: [R-023], [R-044]
+**修改文件**:
+- `backend/app/services/image_service.py` — generate_image() 新增 image_url 参数（图生图）
+- `backend/app/services/video_service.py` — 重写为异步轮询：提交任务 → GET /v1/videos/{task_id} 轮询 → 提取 URL
+- `backend/app/api/v1/images.py` — GenerateImageRequest 新增 image_url 字段
+- `app/src/lib/api.ts` — generateImage() 新增 imageUrl 参数
+- `app/src/store/useChatStore.ts` — generateImageInChat 支持 imageUrl 参数
+- `app/src/pages/Chat.tsx` — /image 命令解析 @url 语法，图片气泡添加「以此图修改」按钮
+
+**变更摘要**:
+- 聊天支持图生图：`/image @图片URL 描述` 以参考图为基础修改生成新图
+- 生成图片下方添加「以此图修改」按钮，一键填充图生图命令
+- 视频生成改为异步轮询（Agnes 视频 API 非同步）：提交 → 轮询 status → 完成后提取 URL
+- 视频轮询间隔 5 秒，最长等待 5 分钟
+
+---
+
 ## 2026-06-16 15:20:00 — 聊天页面接入图片/视频生成 + 媒体消息渲染
 
 **需求**: [R-023], [R-044]
