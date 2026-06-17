@@ -428,8 +428,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
 // ─── 两次调用：数据生成 + 用户回复 ───
 
-const API_BASE = 'http://localhost:7779/api/v1';
-
 /**
  * 创作请求的两次 LLM 调用流程：
  * 1. 第一次：非流式，只生成结构化 JSON 数据（剧本+角色+分镜）
