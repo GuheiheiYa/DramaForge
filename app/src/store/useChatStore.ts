@@ -492,6 +492,8 @@ async function fetchStreamResponse(
       const session = s.sessions.find((ss) => ss.id === sessionId);
       const aiMsg = session?.messages.find((m) => m.id === aiMsgId);
       finalContent = aiMsg?.content || '';
+      // 从显示内容中剥离 <pipeline_data> JSON 块
+      const cleanedContent = finalContent.replace(/<pipeline_data>[\s\S]*?<\/pipeline_data>/, '').trim();
       return {
         isGenerating: false,
         sessions: s.sessions.map((ss) => {
@@ -499,7 +501,7 @@ async function fetchStreamResponse(
           return {
             ...ss,
             messages: ss.messages.map((m) =>
-              m.id === aiMsgId ? { ...m, isStreaming: false } : m
+              m.id === aiMsgId ? { ...m, isStreaming: false, content: cleanedContent || m.content } : m
             ),
           };
         }),
