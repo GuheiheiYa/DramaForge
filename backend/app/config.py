@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
 
+    # HTTP 服务（固定开发端口，与前端 app/src/lib/config.ts 保持一致）
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 7790
+
     # 数据库
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dramaforge"
     SQLITE_URL: str = "sqlite+aiosqlite:///./dramaforge.db"

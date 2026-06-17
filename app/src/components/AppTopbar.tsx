@@ -4,7 +4,6 @@ import { useAppStore } from '@/store/useAppStore';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
-import { Toaster } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   getNotifications,
@@ -25,6 +24,18 @@ const pathNames: Record<string, string> = {
   '/assets': '素材库',
   '/history': '生成记录',
   '/cost': '成本统计',
+};
+
+/** 搜索关键词 → 路由映射 */
+const searchRouteMap: Record<string, string> = {
+  '剧本': '/script',
+  '角色': '/characters',
+  '分镜': '/storyboard',
+  '合成': '/composer',
+  '技能': '/skills',
+  '素材': '/assets',
+  '历史': '/history',
+  '成本': '/cost',
 };
 
 // ─── Keyboard shortcuts reference ───
@@ -82,9 +93,11 @@ function HotkeyDialog({ onClose }: { onClose: () => void }) {
 
 // ─── Notification Panel ───
 function NotificationPanel({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [detailNotification, setDetailNotification] = useState<NotificationData | null>(null);
 
   // 从后端加载通知
   const loadNotifications = useCallback(async () => {
@@ -128,7 +141,16 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
       }
     }
     if (notification.link) {
-      toastInfo(`跳转到: ${notification.link}`);
+      // 如果 link 是内部路由则导航，否则打开新窗口
+      if (notification.link.startsWith('/')) {
+        navigate(notification.link);
+        onClose();
+      } else {
+        window.open(notification.link, '_blank', 'noopener');
+      }
+    } else {
+      // 无链接时展示通知详情弹窗
+      setDetailNotification(notification);
     }
   };
 
@@ -194,11 +216,43 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <button
-        onClick={() => { toastInfo('查看全部通知'); onClose(); }}
+        onClick={() => { loadNotifications(); }}
         className="w-full h-10 border-t border-[#DEDBD8] text-[12px] text-[#5A7FA8] hover:bg-[#F8F7F6] transition-colors flex items-center justify-center gap-1"
       >
         查看全部 <ChevronRight size={12} />
       </button>
+
+      {/* Notification Detail Dialog */}
+      <AnimatePresence>
+        {detailNotification && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-modal flex items-center justify-center p-4"
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setDetailNotification(null)} />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.34, 1.56, 0.64, 1] as [number, number, number, number] }}
+              className="relative bg-white rounded-2xl shadow-xl w-full max-w-[400px] overflow-hidden"
+            >
+              <div className="px-6 py-5 border-b border-[#DEDBD8] flex items-center justify-between">
+                <h3 className="text-h3 text-[#383431]">{detailNotification.title}</h3>
+                <button onClick={() => setDetailNotification(null)} className="w-8 h-8 rounded-md flex items-center justify-center hover:bg-[#F8F7F6] text-[#A8A39E] transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-body text-[#524D48]">{detailNotification.description}</p>
+                <p className="text-caption text-[#C5C1BC] mt-4">{detailNotification.created_at_str}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -245,14 +299,27 @@ export default function AppTopbar() {
 
   const handleSearch = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchValue.trim()) {
-      navigate('/');
-      toastInfo(`搜索: "${searchValue}"`);
+      const query = searchValue.trim();
+      // 匹配搜索关键词映射
+      const matchedRoute = searchRouteMap[query];
+      if (matchedRoute) {
+        navigate(matchedRoute);
+      } else {
+        // 尝试模糊匹配 pathNames 中的值
+        const fuzzyMatch = Object.entries(pathNames).find(
+          ([, name]) => name.includes(query)
+        );
+        if (fuzzyMatch) {
+          navigate(fuzzyMatch[0]);
+        } else {
+          toastInfo(`未找到匹配内容: ${query}`);
+        }
+      }
     }
   };
 
   return (
     <header className="h-topbar bg-white border-b border-[#DEDBD8] flex items-center px-4 sticky top-0 z-fixed-nav">
-      <Toaster position="top-center" />
       {/* Left: Toggle + Breadcrumb */}
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <button

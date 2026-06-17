@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Camera, Copy, Trash2, RefreshCw } from 'lucide-react';
 import type { Shot } from './types';
-import { SHOT_TYPE_STYLES } from './types';
+import { getShotTypeStyle } from './types';
 import { cn } from '@/lib/utils';
 import { toastSuccess } from '@/hooks/useToast';
 
@@ -155,7 +155,7 @@ export default function TimelineStrip({
         onWheel={handleWheel}
       >
         {shots.map((shot, index) => {
-          const shotStyle = SHOT_TYPE_STYLES[shot.shotType];
+          const shotStyle = getShotTypeStyle(shot.shotType);
           const isSelected = shot.id === selectedShotId;
           const isHovered = shot.id === hoveredShotId;
           const isDragOver = shot.id === dragOverId;

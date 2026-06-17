@@ -1,6 +1,7 @@
 # 数据模型文档
 
-**最后更新**: 2026-06-15 11:45:00
+**最后更新**: 2026-06-17  
+**Pipeline 规格**: 见 [D-004 pipeline-full-flow-spec.md](design/pipeline-full-flow-spec.md)
 **数据库**: SQLite (aiosqlite)
 **ORM**: SQLAlchemy 2.0 async
 **ID 规范**: 全量 UUID v4（无前缀）
@@ -20,11 +21,21 @@ projects (中心表)
   │
   ├── timeline_clips (1:N)
   │
-  └── subtitle_segments (1:N)
+  ├── subtitle_segments (1:N)
+  │
+  ├── generation_tasks (1:N)
+  │
+  ├── assets (1:N)
+  │
+  ├── cost_records (1:N)
+  │
+  └── pipeline_runs (1:N)
 
 skills (全局资源，不关联项目)
   ├── skill_parameters (1:N)
   └── skill_reviews (1:N)
+
+notifications (全局，按 user_id，不关联 project)
 ```
 
 ---
@@ -280,11 +291,14 @@ skills (全局资源，不关联项目)
 | status | VARCHAR(20) | 否 | 'ready' | 状态：ready/generating/error |
 | shot_ref | VARCHAR(50) | 否 | '' | 关联分镜引用 |
 | color | VARCHAR(20) | 否 | '' | 显示颜色 HEX |
+| media_url | VARCHAR(500) | 否 | '' | 媒体文件 URL（Pipeline Step 3 视频写入） |
 | created_at | DATETIME | 否 | now() | 创建时间 |
 | updated_at | DATETIME | 否 | now() | 更新时间 |
 
 **关联**:
 - N:1 → projects
+
+**Pipeline 写入**: Step 3（video）成功 clip 写入 `media_url`、`track_type='video'`
 
 ---
 
@@ -305,6 +319,113 @@ skills (全局资源，不关联项目)
 **关联**:
 - N:1 → projects
 
+**Pipeline 写入**: 当前未写入（Step 5 合成占位）
+
+---
+
+### 13. generation_tasks — 生成任务表
+
+**职责**: 记录各阶段 AI 生成任务（含 Pipeline 视频步）。
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | VARCHAR(32) | PK | UUID hex | 主键 |
+| project_id | VARCHAR(32) | FK | — | → projects.id (CASCADE) |
+| stage | VARCHAR(50) | 是 | — | script/character/storyboard/video/audio/compose |
+| skill_id | VARCHAR(50) | 否 | '' | SKILL ID |
+| status | VARCHAR(20) | 否 | queued | queued/running/completed/failed/cancelled |
+| progress | INTEGER | 否 | 0 | 0–100 |
+| detail | TEXT | 否 | '' | 状态详情 |
+| result_json | JSON | 否 | null | 结果 JSON |
+| error_message | TEXT | 否 | '' | 错误信息 |
+| created_at | DATETIME | 否 | now() | 创建时间 |
+| started_at | DATETIME | 否 | null | 开始时间 |
+| completed_at | DATETIME | 否 | null | 完成时间 |
+
+**Pipeline 写入**: Step 3（video）创建 `stage='video'` 任务
+
+---
+
+### 14. assets — 素材表
+
+**职责**: 项目内图片/音频/视频素材文件元数据。
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | VARCHAR(32) | PK | UUID | 主键 |
+| project_id | VARCHAR(32) | FK | — | → projects.id (CASCADE) |
+| name | VARCHAR(200) | 是 | — | 素材名称 |
+| type | VARCHAR(20) | 是 | — | image/audio/video |
+| file_path | VARCHAR(500) | 否 | '' | 本地或存储路径 |
+| file_size | INTEGER | 否 | 0 | 字节 |
+| mime_type | VARCHAR(100) | 否 | '' | MIME |
+| width / height | INTEGER | 否 | 0 | 尺寸 |
+| duration | FLOAT | 否 | 0 | 时长（秒） |
+| thumbnail_path | VARCHAR(500) | 否 | '' | 缩略图 |
+| created_at / updated_at | DATETIME | 否 | now() | 时间戳 |
+
+**Pipeline 写入**: 当前未自动写入（角色图在 `characters.avatar_url`）
+
+---
+
+### 15. cost_records — 成本记录表
+
+**职责**: AI 服务调用费用统计。
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | VARCHAR(32) | PK | UUID | 主键 |
+| project_id | VARCHAR(32) | FK | — | → projects.id (CASCADE) |
+| service | VARCHAR(50) | 是 | — | deepseek/jimeng/seedance/kling/volc_tts/… |
+| task_id | VARCHAR(32) | 否 | '' | 关联 generation_tasks.id |
+| amount | FLOAT | 否 | 0 | 费用（元） |
+| usage | VARCHAR(100) | 否 | '' | 用量描述 |
+| usage_value | FLOAT | 否 | 0 | 用量数值 |
+| usage_unit | VARCHAR(20) | 否 | '' | tokens/张/秒/… |
+| created_at | DATETIME | 否 | now() | 创建时间 |
+
+**Pipeline 写入**: 当前未自动写入（待 P0 实现）
+
+---
+
+### 16. pipeline_runs — Pipeline 执行记录
+
+**职责**: 持久化 Chat Studio 一次完整编排的运行状态与步骤快照。
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| id | VARCHAR(32) | PK | pipe_* UUID | 主键 |
+| project_id | VARCHAR(32) | FK | — | → projects.id (CASCADE) |
+| mode | VARCHAR(20) | 否 | auto | auto/confirm/preview |
+| status | VARCHAR(20) | 否 | running | running/paused/completed/failed |
+| current_step | INTEGER | 否 | 0 | 0–5 |
+| creative_input | TEXT | 否 | '' | 用户创意 |
+| structured_data | JSON | 否 | {} | Chat 预提取（当前多为空） |
+| skill_id | VARCHAR(50) | 否 | jp-school | SKILL |
+| steps_json | JSON | 否 | [] | 六步 status/progress/data 快照 |
+| error_json | JSON | 否 | null | 失败信息 |
+| waiting_confirmation | BOOLEAN | 否 | false | confirm 模式等待 |
+| created_at / updated_at | DATETIME | 否 | now() | 时间戳 |
+
+**Pipeline 写入**: `POST /pipeline/start` INSERT；每步 `_persist_run()` UPDATE
+
+---
+
+## Pipeline 步骤 → 表写入映射
+
+| Pipeline Step | ID | 写入表 | 说明 |
+|---------------|-----|--------|------|
+| 启动 | — | pipeline_runs | INSERT |
+| 0 | script | scripts, episodes, scenes, script_blocks | INSERT（不覆盖旧数据） |
+| 1 | character | characters | INSERT |
+| 2 | storyboard | storyboard_shots | INSERT |
+| 3 | video | generation_tasks, timeline_clips | 视频任务 + 时间轴 clip（含 media_url） |
+| 4 | audio | — | 占位，仅 steps_json |
+| 5 | compose | pipeline_runs | status=completed，无成片表 |
+| 全程 | — | pipeline_runs | steps_json, current_step, status, error_json |
+
+**删除项目**: `DELETE /projects/{id}` 级联删除上述所有带 `project_id` 的子表。
+
 ---
 
 ## 关联关系汇总
@@ -319,6 +440,10 @@ skills (全局资源，不关联项目)
 | projects → storyboard_shots | 1:N | storyboard_shots.project_id | CASCADE |
 | projects → timeline_clips | 1:N | timeline_clips.project_id | CASCADE |
 | projects → subtitle_segments | 1:N | subtitle_segments.project_id | CASCADE |
+| projects → generation_tasks | 1:N | generation_tasks.project_id | CASCADE |
+| projects → assets | 1:N | assets.project_id | CASCADE |
+| projects → cost_records | 1:N | cost_records.project_id | CASCADE |
+| projects → pipeline_runs | 1:N | pipeline_runs.project_id | CASCADE |
 | skills → skill_parameters | 1:N | skill_parameters.skill_id | CASCADE |
 | skills → skill_reviews | 1:N | skill_reviews.skill_id | CASCADE |
 

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   extractProjectTitle,
 } from '@/lib/pipeline-data-extractor';
-import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
+import type { ScriptData, CharacterData, StoryboardData } from '@/store/usePipelineStore';
 import { generateVideo, generateImage } from '@/lib/api';
 
 export interface ChatMessage {
@@ -13,9 +14,12 @@ export interface ChatMessage {
   timestamp: string;
   model?: string;
   isStreaming?: boolean;    // 是否正在流式输出中
-  type?: 'text' | 'plan_card' | 'image' | 'video';  // 消息类型
+  type?: 'text' | 'plan_confirm_card' | 'plan_card' | 'image' | 'video' | 'progress_update' | 'step_complete' | 'error_card' | 'pipeline_complete';
   imageUrl?: string;       // 图片 URL（type=image 时使用）
   videoUrl?: string;       // 视频 URL（type=video 时使用）
+  pipelineStep?: number;
+  pipelineError?: { message: string; retryable: boolean };
+  resolved?: boolean;
 }
 
 export interface ChatSession {
@@ -52,7 +56,7 @@ function generateId() {
 }
 
 // ─── API ───
-const API_BASE = 'http://localhost:7779/api/v1';
+import { API_BASE } from '@/lib/config';
 
 const modelToProvider: Record<string, string> = {
   'mimo': 'mimo',
@@ -84,10 +88,14 @@ interface ChatState {
   currentSkill: string;
   isGenerating: boolean;
   deepThink: boolean;
-  pipelineStage: 'analyzing' | 'replying' | null;  // 两次调用的阶段
-  // Pipeline 相关 — 从 AI 回复中提取的数据
+  pipelineStage: 'analyzing' | 'replying' | null;
+  creativePlanText: string | null;
+  planConfirmed: boolean;
+  lastCreationUserMessage: string;
+  // Pipeline 相关 — 保留字段供其他页面兼容
   extractedScript: ScriptData | null;
   extractedCharacters: CharacterData | null;
+  extractedStoryboard: StoryboardData | null;
   extractedTitle: string;
 
   createSession: () => string;
@@ -98,8 +106,13 @@ interface ChatState {
   setModel: (model: string) => void;
   setSkill: (skill: string) => void;
   setDeepThink: (v: boolean) => void;
+  confirmPlan: () => void;
+  regeneratePlan: () => void;
   getCurrentSession: () => ChatSession | null;
-  updateExtractedData: (data: { script?: ScriptData; characters?: CharacterData; title?: string }) => void;
+  updateExtractedData: (data: { script?: ScriptData; characters?: CharacterData; storyboard?: StoryboardData; title?: string }) => void;
+  addPipelineMessage: (sessionId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
+  updatePipelineProgressMessage: (sessionId: string, step: number, content: string) => void;
+  resolvePipelineErrorMessage: (sessionId: string, step: number) => void;
   generateImageInChat: (prompt: string, imageUrl?: string) => void;
   generateVideoInChat: (prompt: string, imageUrl?: string) => void;
 }
@@ -110,7 +123,9 @@ const defaultSkill = 'jp-school';
 // Keywords that indicate a creation request
 const CREATION_KEYWORDS = ['帮我做', '帮我生成', '帮我创作', '做一个', '生成一个', '创作一个', '制作', '漫剧', '短剧', '剧本'];
 
-export const useChatStore = create<ChatState>((set, get) => ({
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set, get) => ({
   sessions: [],
   currentSessionId: null,
   currentModel: defaultModel,
@@ -118,8 +133,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isGenerating: false,
   deepThink: false,
   pipelineStage: null,
+  creativePlanText: null,
+  planConfirmed: false,
+  lastCreationUserMessage: '',
   extractedScript: null,
   extractedCharacters: null,
+  extractedStoryboard: null,
   extractedTitle: '',
 
   createSession: () => {
@@ -228,10 +247,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const isCreationReq = CREATION_KEYWORDS.some((kw) => content.trim().includes(kw));
 
     if (isCreationReq) {
-      // ── 两次调用模式 ──
       runCreationPipeline(sessionId, aiMsgId, content.trim(), provider, state.deepThink, abortController.signal);
     } else {
-      // ── 普通对话：单次流式调用 ──
       fetchStreamResponse(
         sessionId,
         aiMsgId,
@@ -254,30 +271,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => {
       const sessionId = s.currentSessionId;
       if (!sessionId) return { isGenerating: false, pipelineStage: null };
-      // 检查最后一条用户消息是否匹配创作关键词
-      const session = s.sessions.find((ss) => ss.id === sessionId);
-      const lastUser = session ? [...session.messages].reverse().find((m) => m.role === 'user') : null;
-      const isCreation = lastUser ? CREATION_KEYWORDS.some((kw) => lastUser.content.includes(kw)) : false;
-      if (isCreation) {
-        setTimeout(() => {
-          const planCardMsg: ChatMessage = {
-            id: generateId(),
-            role: 'assistant',
-            content: lastUser?.content.slice(0, 20) || '创作',
-            type: 'plan_card',
-            timestamp: (() => {
-              const n = new Date();
-              return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
-            })(),
-          };
-          useChatStore.setState((prev) => ({
-            sessions: prev.sessions.map((ss) => {
-              if (ss.id !== sessionId) return ss;
-              return { ...ss, messages: [...ss.messages, planCardMsg] };
-            }),
-          }));
-        }, 100);
-      }
       return {
         isGenerating: false,
         pipelineStage: null,
@@ -294,6 +287,81 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  confirmPlan: () => {
+    const state = get();
+    if (!state.creativePlanText || !state.currentSessionId || state.planConfirmed) return;
+
+    const title =
+      extractProjectTitle(state.creativePlanText) ||
+      extractProjectTitle(state.lastCreationUserMessage) ||
+      '创作项目';
+
+    const sessionId = state.currentSessionId;
+    const planCardMsg: ChatMessage = {
+      id: generateId(),
+      role: 'assistant',
+      content: title,
+      type: 'plan_card',
+      timestamp: (() => {
+        const n = new Date();
+        return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+      })(),
+    };
+
+    set({
+      planConfirmed: true,
+      extractedTitle: title,
+      sessions: get().sessions.map((ss) =>
+        ss.id === sessionId ? { ...ss, messages: [...ss.messages, planCardMsg] } : ss
+      ),
+    });
+  },
+
+  regeneratePlan: () => {
+    const state = get();
+    if (!state.lastCreationUserMessage || !state.currentSessionId || state.isGenerating) return;
+
+    const sessionId = state.currentSessionId;
+    const provider = modelToProvider[state.currentModel] || 'mimo';
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const aiMsgId = generateId();
+
+    const aiPlaceholder: ChatMessage = {
+      id: aiMsgId,
+      role: 'assistant',
+      content: '',
+      thinking: '',
+      timestamp: timeStr,
+      isStreaming: true,
+    };
+
+    const abortController = new AbortController();
+    currentAbortController = abortController;
+
+    set({
+      isGenerating: true,
+      planConfirmed: false,
+      creativePlanText: null,
+      pipelineStage: 'replying',
+      sessions: state.sessions.map((ss) =>
+        ss.id === sessionId
+          ? { ...ss, messages: [...ss.messages, aiPlaceholder], updatedAt: timeStr }
+          : ss
+      ),
+    });
+
+    runCreationPipeline(
+      sessionId,
+      aiMsgId,
+      state.lastCreationUserMessage,
+      provider,
+      state.deepThink,
+      abortController.signal,
+      false,
+    );
+  },
+
   setModel: (model) => set({ currentModel: model }),
   setSkill: (skill) => set({ currentSkill: skill }),
   setDeepThink: (v) => set({ deepThink: v }),
@@ -307,11 +375,76 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({
       extractedScript: data.script ?? s.extractedScript,
       extractedCharacters: data.characters ?? s.extractedCharacters,
+      extractedStoryboard: data.storyboard ?? s.extractedStoryboard,
       extractedTitle: data.title ?? s.extractedTitle,
     }));
   },
 
+  addPipelineMessage: (sessionId, message) => {
+    const timeStr = (() => {
+      const n = new Date();
+      return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+    })();
+    const msg: ChatMessage = {
+      ...message,
+      id: generateId(),
+      timestamp: timeStr,
+      role: message.role ?? 'assistant',
+      content: message.content ?? '',
+    };
+    set((s) => ({
+      sessions: s.sessions.map((ss) =>
+        ss.id === sessionId ? { ...ss, messages: [...ss.messages, msg] } : ss
+      ),
+    }));
+  },
+
+  updatePipelineProgressMessage: (sessionId, step, content) => {
+    set((s) => ({
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        const existingIdx = ss.messages.findIndex(
+          (m) => m.type === 'progress_update' && m.pipelineStep === step
+        );
+        if (existingIdx >= 0) {
+          const messages = [...ss.messages];
+          messages[existingIdx] = { ...messages[existingIdx], content };
+          return { ...ss, messages };
+        }
+        const msg: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          type: 'progress_update',
+          pipelineStep: step,
+          content,
+          timestamp: (() => {
+            const n = new Date();
+            return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+          })(),
+        };
+        return { ...ss, messages: [...ss.messages, msg] };
+      }),
+    }));
+  },
+
   // ─── 图片生成 ───
+  resolvePipelineErrorMessage: (sessionId, step) => {
+    if (!sessionId) return;
+    set((s) => ({
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        return {
+          ...ss,
+          messages: ss.messages.map((m) =>
+            m.type === 'error_card' && m.pipelineStep === step && !m.resolved
+              ? { ...m, resolved: true }
+              : m
+          ),
+        };
+      }),
+    }));
+  },
+
   generateImageInChat: (prompt, imageUrl) => {
     const state = get();
     let sessionId = state.currentSessionId;
@@ -424,14 +557,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       });
   },
-}));
+    }),
+    {
+      name: 'dramaforge-chat-store',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        sessions: state.sessions.map((session) => ({
+          ...session,
+          messages: session.messages.map((message) => ({
+            ...message,
+            isStreaming: false,
+          })),
+        })),
+        currentSessionId: state.currentSessionId,
+        currentModel: state.currentModel,
+        currentSkill: state.currentSkill,
+      }),
+    },
+  ),
+);
 
-// ─── 两次调用：数据生成 + 用户回复 ───
+// ─── 创作方案流式生成 ───
 
 /**
- * 创作请求的两次 LLM 调用流程：
- * 1. 第一次：非流式，只生成结构化 JSON 数据（剧本+角色+分镜）
- * 2. 第二次：流式，基于数据生成面向用户的回复
+ * 创作请求：单次流式生成人类可读创作方案，用户确认后再启动 Pipeline 详细生成。
  */
 async function runCreationPipeline(
   sessionId: string,
@@ -440,226 +589,55 @@ async function runCreationPipeline(
   provider: string,
   deepThink: boolean,
   signal: AbortSignal,
+  resetContext = true,
 ) {
   const state = useChatStore.getState();
   const skillConfig = skillToConfig[state.currentSkill] || skillToConfig['jp-school'];
   const projectTitle = extractProjectTitle(userMessage);
 
-  // 更新加载状态
-  useChatStore.setState({ pipelineStage: 'analyzing' });
+  if (resetContext) {
+    useChatStore.setState({
+      pipelineStage: 'replying',
+      lastCreationUserMessage: userMessage,
+      planConfirmed: false,
+      creativePlanText: null,
+      extractedScript: null,
+      extractedCharacters: null,
+      extractedStoryboard: null,
+      extractedTitle: '',
+    });
+  } else {
+    useChatStore.setState({ pipelineStage: 'replying' });
+  }
 
-  // 更新 AI 消息为加载状态
-  const updateAIContent = (content: string) => {
-    useChatStore.setState((s) => ({
-      sessions: s.sessions.map((ss) => {
-        if (ss.id !== sessionId) return ss;
-        return {
-          ...ss,
-          messages: ss.messages.map((m) =>
-            m.id === aiMsgId ? { ...m, content } : m
-          ),
-        };
-      }),
-    }));
-  };
+  const planSystemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
 
-  updateAIContent('');
-
-  // ═══ 第一次调用：生成结构化数据（非流式） ═══
-  const dataPrompt = `你是一个专业的漫剧/短剧编剧。风格要求：${skillConfig.prompt}
-
-请根据以下创意，生成完整的结构化项目数据。只输出 JSON，不要其他内容。
-
-JSON 格式：
-{
-  "title": "项目标题",
-  "episodes": [
-    {
-      "number": 1,
-      "title": "集标题",
-      "scenes": [
-        {
-          "title": "场景名",
-          "location": "地点",
-          "time_tag": "时间（清晨/上午/下午/傍晚/夜晚等）",
-          "summary": "场景摘要描述（2-3句话）"
-        }
-      ]
-    }
-  ],
-  "characters": [
-    {
-      "name": "角色名",
-      "role": "主角/配角/龙套",
-      "gender": "男/女",
-      "age": 18,
-      "description": "角色简介",
-      "personality": "性格描述",
-      "personality_traits": ["特征1", "特征2"],
-      "appearance": "外貌描述",
-      "costume": "服装描述"
-    }
-  ],
-  "storyboard": [
-    {
-      "shot_number": 1,
-      "episode_number": 1,
-      "scene_title": "对应场景名",
-      "description": "英文镜头描述，用于AI图像生成",
-      "shot_type": "全景/中景/近景/特写",
-      "duration": 5,
-      "camera_movement": "固定/推/拉/摇/移"
-    }
-  ]
-}
+请根据用户的创意，输出一份**人类可读的创作方案**（使用 Markdown 格式），包含：
+1. **项目标题**
+2. **故事梗概**（2-4 段）
+3. **分集规划**（每集 1-2 句概要，通常 3-8 集）
+4. **主要角色**（每个角色：姓名、身份、性格特点）
+5. **视觉风格**（画面基调、色调、参考风格）
+6. **关键场景**（3-5 个代表性场景描述）
 
 要求：
-- episodes 数量根据内容需要设定（通常 3-8 集）
-- 每集 2-4 个场景
-- characters 至少包含 2-3 个角色
-- storyboard 至少 6-10 个镜头
-- description 字段用英文（用于后续 AI 图像生成）
-- 只输出 JSON，不要其他文字`;
-
-  let structuredData: Record<string, unknown> | null = null;
-
-  try {
-    const resp = await fetch(`${API_BASE}/pipeline/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: dataPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        model: provider,
-        deep_think: deepThink,
-      }),
-    });
-
-    if (!resp.ok) throw new Error(`数据生成失败 (${resp.status})`);
-    const data = await resp.json();
-    const reply = data.reply || '';
-
-    // 解析 JSON
-    structuredData = parseJSONFromReply(reply);
-    console.log('[Pipeline] 第一次调用完成, 数据:', structuredData ? '解析成功' : '解析失败');
-  } catch (err) {
-    console.error('[Pipeline] 第一次调用失败:', err);
-    // 继续执行第二次调用，但不带数据
-  }
-
-  // 保存结构化数据到 store
-  if (structuredData) {
-    const scriptResult = jsonToScript(structuredData, projectTitle);
-    const charResult = jsonToCharacters(structuredData);
-    const shotsResult = jsonToStoryboard(structuredData);
-
-    useChatStore.setState({
-      extractedScript: { episodes: scriptResult },
-      extractedCharacters: { characters: charResult },
-      extractedTitle: structuredData.title as string || projectTitle,
-    });
-
-    console.log('[Pipeline] 数据已保存:', {
-      episodes: scriptResult.length,
-      characters: charResult.length,
-      shots: shotsResult.length,
-    });
-  }
-
-  // ═══ 第二次调用：生成用户可见回复（流式） ═══
-  useChatStore.setState({ pipelineStage: 'replying' });
-
-  let contextHint = '';
-  if (structuredData) {
-    const epCount = (structuredData.episodes as unknown[])?.length || 0;
-    const charCount = (structuredData.characters as unknown[])?.length || 0;
-    const shotCount = (structuredData.storyboard as unknown[])?.length || 0;
-    contextHint = `\n\n[系统提示：你已经为用户生成了以下项目数据，${epCount} 集剧本、${charCount} 个角色、${shotCount} 个分镜镜头。请基于这些数据，给用户一段精炼、有感染力的项目概览回复。不要输出 JSON。]`;
-  }
-
-  const replySystemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
-你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
-回复要详细、专业、有创意。${contextHint}`;
+- 内容要有创意、专业、有感染力
+- **不要输出 JSON**，不要使用代码块包裹整份方案
+- 这是供用户审阅确认的方向性方案，详细剧本/分镜将在用户确认后由制作流程生成`;
 
   fetchStreamResponse(
     sessionId,
     aiMsgId,
     [
-      { role: 'system', content: replySystemPrompt },
+      { role: 'system', content: planSystemPrompt },
       { role: 'user', content: userMessage },
     ],
     provider,
     deepThink,
     signal,
-    true,  // isCreationRequest = true
+    true,
     projectTitle,
   );
-}
-
-// ─── JSON 解析辅助函数 ───
-
-function parseJSONFromReply(text: string): Record<string, unknown> | null {
-  // 尝试直接解析
-  try { return JSON.parse(text); } catch { /* continue */ }
-  // 提取 ```json ... ``` 代码块
-  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlock) { try { return JSON.parse(codeBlock[1].trim()); } catch { /* continue */ } }
-  // 提取 { ... }
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) { try { return JSON.parse(jsonMatch[0]); } catch { /* continue */ } }
-  return null;
-}
-
-function jsonToScript(data: Record<string, unknown>, fallbackTitle: string) {
-  const episodes = (data.episodes as unknown[]) || [];
-  return episodes.map((ep: Record<string, unknown>, i: number) => ({
-    id: `ep${ep.number || i + 1}`,
-    number: (ep.number as number) || i + 1,
-    title: (ep.title as string) || `第${i + 1}集`,
-    scenes: ((ep.scenes as unknown[]) || []).map((s: Record<string, unknown>, j: number) => ({
-      id: `s${j + 1}`,
-      title: (s.title as string) || `场景${j + 1}`,
-      summary: (s.summary as string) || '',
-      location: (s.location as string) || '未指定',
-      timeTag: (s.time_tag as string) || '日间',
-    })),
-  }));
-}
-
-function jsonToCharacters(data: Record<string, unknown>) {
-  const characters = (data.characters as unknown[]) || [];
-  const AVATAR_COLORS = ['#A8835F', '#5A7FA8', '#7A6B8A', '#5B8C5A', '#B85C50', '#C49A3C'];
-  return characters.map((c: Record<string, unknown>, i: number) => ({
-    id: `char_${i + 1}`,
-    name: (c.name as string) || `角色${i + 1}`,
-    role: (['主角', '配角', '龙套'].includes(c.role as string) ? c.role : i < 2 ? '主角' : '配角') as '主角' | '配角' | '龙套',
-    description: (c.description as string) || '',
-    gender: (c.gender as string) || '',
-    age: (c.age as number) || 0,
-    personality: (c.personality as string) || '',
-    personalityTraits: (c.personality_traits as string[]) || [],
-    appearance: (c.appearance as string) || '',
-    costume: (c.costume as string) || '',
-    status: 'done' as const,
-    avatarColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
-  }));
-}
-
-function jsonToStoryboard(data: Record<string, unknown>) {
-  const shots = (data.storyboard as unknown[]) || [];
-  return shots.map((s: Record<string, unknown>, i: number) => ({
-    id: `shot_${i + 1}`,
-    shotNumber: (s.shot_number as number) || i + 1,
-    episodeNumber: (s.episode_number as number) || 1,
-    sceneTitle: (s.scene_title as string) || '',
-    description: (s.description as string) || '',
-    shotType: (s.shot_type as string) || '中景',
-    duration: (s.duration as number) || 5,
-    cameraMovement: (s.camera_movement as string) || '固定',
-    status: 'done' as const,
-  }));
 }
 
 // ─── Streaming fetch ───
@@ -700,9 +678,11 @@ async function fetchStreamResponse(
       finalContent = aiMsg?.content || '';
       // 从显示内容中剥离 <pipeline_data> JSON 块
       const cleanedContent = finalContent.replace(/<pipeline_data>[\s\S]*?<\/pipeline_data>/, '').trim();
+      finalContent = cleanedContent;
       return {
         isGenerating: false,
         pipelineStage: null,
+        creativePlanText: cleanedContent || null,
         sessions: s.sessions.map((ss) => {
           if (ss.id !== sessionId) return ss;
           return {
@@ -716,17 +696,19 @@ async function fetchStreamResponse(
     });
     currentAbortController = null;
 
-    // Second: if creation request, inject plan card
-    // 注意：结构化数据已在 runCreationPipeline 的第一次调用中提取，这里不再重复提取
-    if (isCreationRequest) {
-      const title = useChatStore.getState().extractedTitle || extractProjectTitle(projectTitle);
+    // 创作请求完成后注入方案确认卡片
+    if (isCreationRequest && finalContent.trim()) {
+      const title =
+        extractProjectTitle(finalContent) ||
+        extractProjectTitle(projectTitle) ||
+        '创作项目';
 
       setTimeout(() => {
-        const planCardMsg: ChatMessage = {
+        const confirmCardMsg: ChatMessage = {
           id: generateId(),
           role: 'assistant',
           content: title,
-          type: 'plan_card',
+          type: 'plan_confirm_card',
           timestamp: (() => {
             const n = new Date();
             return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
@@ -735,7 +717,7 @@ async function fetchStreamResponse(
         useChatStore.setState((s) => ({
           sessions: s.sessions.map((ss) => {
             if (ss.id !== sessionId) return ss;
-            return { ...ss, messages: [...ss.messages, planCardMsg] };
+            return { ...ss, messages: [...ss.messages, confirmCardMsg] };
           }),
         }));
       }, 100);
@@ -757,34 +739,13 @@ async function fetchStreamResponse(
       }),
     }));
     currentAbortController = null;
-    // 出错时仍注入 plan_card（如果匹配创作请求），保证流程不中断
-    if (isCreationRequest) {
-      setTimeout(() => {
-        const planCardMsg: ChatMessage = {
-          id: generateId(),
-          role: 'assistant',
-          content: projectTitle,
-          type: 'plan_card',
-          timestamp: (() => {
-            const n = new Date();
-            return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
-          })(),
-        };
-        useChatStore.setState((s) => ({
-          sessions: s.sessions.map((ss) => {
-            if (ss.id !== sessionId) return ss;
-            return { ...ss, messages: [...ss.messages, planCardMsg] };
-          }),
-        }));
-      }, 100);
-    }
   };
 
   try {
     const resp = await fetch(`${API_BASE}/pipeline/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model, deep_think: deepThink, stream: true }),
+      body: JSON.stringify({ messages, model, deep_think: deepThink, max_tokens: 8192, stream: true }),
       signal,
     });
 
@@ -841,6 +802,6 @@ async function fetchStreamResponse(
       // 用户取消，cancelGeneration 已处理状态和 plan_card 注入
       return;
     }
-    setError(`请求失败：${error.message}。请检查后端是否已启动（http://localhost:7779）`);
+    setError(`请求失败：${error.message}。请检查后端是否已启动（${API_BASE.replace('/api/v1', '')}）`);
   }
 }

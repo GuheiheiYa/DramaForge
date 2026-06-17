@@ -14,11 +14,12 @@ import {
 } from 'lucide-react';
 import type { Shot } from './types';
 import {
-  SHOT_TYPE_STYLES,
+  getShotTypeStyle,
   CAMERA_MOVEMENT_OPTIONS,
   COMPOSITION_OPTIONS,
   LIGHTING_OPTIONS,
   SHOT_TYPE_OPTIONS,
+  SHOT_TYPE_STYLES,
 } from './types';
 import { cn } from '@/lib/utils';
 import { toastSuccess } from '@/hooks/useToast';
@@ -112,7 +113,7 @@ export default function FrameEditor({
     );
   }
 
-  const shotStyle = SHOT_TYPE_STYLES[shot.shotType];
+  const shotStyle = getShotTypeStyle(shot.shotType);
   const currentIndex = shots.findIndex((s) => s.id === shot.id);
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < shots.length - 1;

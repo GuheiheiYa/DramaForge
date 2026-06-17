@@ -9,7 +9,7 @@ import { useToast, MSG } from '@/hooks/useToast';
 interface CharacterFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (character: Character) => void;
+  onSave: (character: Character, avatarFile?: File | null) => void;
   editingCharacter?: Character | null;
   allCharacters: Character[];
 }
@@ -40,7 +40,10 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
   const [relationshipTarget, setRelationshipTarget] = useState('');
   const [relationshipType, setRelationshipType] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | undefined>(editingCharacter?.avatarUrl);
   const traitInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingAvatarFile = useRef<File | null>(null);
   const { success } = useToast();
 
   useEffect(() => {
@@ -61,8 +64,10 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
         relationships: [...editingCharacter.relationships],
         scenes: editingCharacter.scenes,
       });
+      setPreviewUrl(editingCharacter.avatarUrl);
     } else {
       setForm(emptyCharacter);
+      setPreviewUrl(undefined);
     }
     setActiveSection(0);
     setErrors({});
@@ -70,6 +75,7 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
     setNewTrait('');
     setRelationshipTarget('');
     setRelationshipType('');
+    pendingAvatarFile.current = null;
   }, [editingCharacter, isOpen]);
 
   const updateField = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => {
@@ -113,7 +119,8 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
       createdAt: editingCharacter?.createdAt || now,
       updatedAt: now,
     };
-    onSave(character);
+    onSave(character, pendingAvatarFile.current);
+    pendingAvatarFile.current = null;
     onClose();
   };
 
@@ -148,14 +155,23 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
     );
   };
 
+  const handleFileSelect = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => setPreviewUrl(e.target?.result as string);
+    reader.readAsDataURL(file);
+    pendingAvatarFile.current = file;
+    setIsDirty(true);
+  };
+
   const handleImageDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      success(MSG.imageUploaded);
+    if (files.length > 0 && files[0].type.startsWith('image/')) {
+      handleFileSelect(files[0]);
     }
-  }, [success]);
+  }, []);
 
   const handleImageDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -167,7 +183,7 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
   };
 
   const handleImageUpload = () => {
-    success(MSG.imageUploaded);
+    fileInputRef.current?.click();
   };
 
   const sections = [
@@ -267,11 +283,41 @@ export default function CharacterForm({ isOpen, onClose, onSave, editingCharacte
                             : 'border-[#DEDBD8] bg-[#F8F7F6] hover:border-[#EAD8C8] hover:bg-[#FBF7F4]'
                         )}
                       >
-                        <Upload size={20} className="text-[#A8A39E] mb-1" />
-                        <span className="text-[12px] text-[#A8A39E]">
-                          {isDragOver ? '释放以上传' : '拖拽图片到此处，或点击上传'}
-                        </span>
+                        {previewUrl ? (
+                          <div className="relative w-full h-24 rounded-lg overflow-hidden">
+                            <img src={previewUrl} alt="角色形象" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewUrl(undefined);
+                                pendingAvatarFile.current = null;
+                                setForm((prev) => ({ ...prev, hasGeneratedImage: false }));
+                              }}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <Upload size={20} className="text-[#A8A39E] mb-1" />
+                            <span className="text-[12px] text-[#A8A39E]">
+                              {isDragOver ? '释放以上传' : '拖拽图片到此处，或点击上传'}
+                            </span>
+                          </>
+                        )}
                       </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleFileSelect(file);
+                        }}
+                      />
                     </div>
 
                     {/* Name */}

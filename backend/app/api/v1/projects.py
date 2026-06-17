@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -97,11 +97,13 @@ async def update_project(project_id: str, req: ProjectUpdate, db: AsyncSession =
 
 @router.delete("/{project_id}", response_model=MessageResponse)
 async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
-    """删除项目。"""
+    """删除项目及其关联数据（SQLite 外键级联）。"""
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    await db.delete(project)
+
+    project_name = project.name
+    await db.execute(text("DELETE FROM projects WHERE id = :project_id"), {"project_id": project_id})
     await db.flush()
-    return MessageResponse(message=f"项目 {project_id} 已删除")
+    return MessageResponse(message=f"项目「{project_name}」已删除")

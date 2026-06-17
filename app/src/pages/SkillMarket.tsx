@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Toaster } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import SkillGrid from './skill/SkillGrid';
 import SkillDetailDrawer from './skill/SkillDetailDrawer';
 import type { Skill, InstallStatus } from './skill/types';
 import { getSkills, installSkill, uninstallSkill, rateSkill, type SkillData } from '@/lib/api';
+import { mockSkills } from './skill/mockData';
 
 /** 后端 SkillData → 前端 Skill 类型转换 */
 function toFrontendSkill(s: SkillData): Skill {
@@ -63,7 +63,8 @@ export default function SkillMarket() {
         setLoading(false);
       })
       .catch((err) => {
-        console.error('[SkillMarket] 加载失败:', err);
+        console.error('[SkillMarket] 加载失败，使用 mock 数据:', err);
+        setSkills(mockSkills);
         setLoading(false);
       });
   }, []);
@@ -128,7 +129,6 @@ export default function SkillMarket() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <div className="p-8 pt-0 max-w-[1400px] mx-auto">
         {/* Page Header */}
         <motion.div

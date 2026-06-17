@@ -116,3 +116,39 @@ async def generate_video(
                 raise RuntimeError(f"Agnes Video 任务失败: {error_msg}")
 
     raise RuntimeError(f"Agnes Video 任务超时（等待 {MAX_POLL_COUNT * POLL_INTERVAL} 秒）")
+
+
+async def generate_video_with_policy_retry(
+    prompt: str,
+    *,
+    image_url: str | None = None,
+    width: int = 1152,
+    height: int = 768,
+    num_frames: int = 121,
+    frame_rate: int = 24,
+) -> dict[str, Any]:
+    """生成视频；若触发内容审核则自动弱化 prompt 重试一次。"""
+    from app.utils.video_prompt import is_content_policy_error, sanitize_video_prompt
+
+    try:
+        return await generate_video(
+            prompt=prompt,
+            image_url=image_url,
+            width=width,
+            height=height,
+            num_frames=num_frames,
+            frame_rate=frame_rate,
+        )
+    except RuntimeError as exc:
+        if not is_content_policy_error(exc):
+            raise
+        sanitized = sanitize_video_prompt(prompt)
+        logger.warning("[Agnes Video] 内容审核拦截，使用弱化 prompt 重试")
+        return await generate_video(
+            prompt=sanitized,
+            image_url=image_url,
+            width=width,
+            height=height,
+            num_frames=num_frames,
+            frame_rate=frame_rate,
+        )

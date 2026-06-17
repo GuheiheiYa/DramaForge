@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
-import { Toaster } from 'sonner';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -119,10 +118,12 @@ function toHistoryItem(task: GenerationTaskData, projects: { id: string; name: s
 
 export default function GenerationHistory() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [rawTasks, setRawTasks] = useState<GenerationTaskData[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<TaskType>('全部');
   const [searchQuery, setSearchQuery] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const projects = useAppStore((s) => s.projects);
 
   // 从后端加载任务列表
@@ -130,6 +131,7 @@ export default function GenerationHistory() {
     setLoading(true);
     try {
       const data = await getGenerationTasks({ page_size: 100 });
+      setRawTasks(data.items);
       setHistory(data.items.map((t) => toHistoryItem(t, projects)));
     } catch (err) {
       console.error('[GenerationHistory] 加载失败:', err);
@@ -171,15 +173,27 @@ export default function GenerationHistory() {
   };
 
   const handleRetry = async (id: string) => {
-    toastInfo('正在重新提交任务...');
-    // TODO: 重新提交任务需要知道原始参数，暂时只刷新状态
-    await loadTasks();
-    toastSuccess('任务列表已刷新');
+    const task = rawTasks.find((t) => t.task_id === id);
+    if (!task) {
+      toastError('找不到原始任务信息');
+      return;
+    }
+    try {
+      toastInfo('正在重新提交任务...');
+      await submitGenerationTask({
+        project_id: task.project_id,
+        stage: task.stage,
+        skill_id: task.skill_id || undefined,
+      });
+      toastSuccess('任务已重新提交');
+      await loadTasks();
+    } catch (err) {
+      toastError('重新提交失败');
+    }
   };
 
   return (
     <>
-      <Toaster position="top-center" />
       <div className="px-6 py-5 max-w-[1280px] mx-auto">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="mb-6">
@@ -253,64 +267,103 @@ export default function GenerationHistory() {
                 </div>
                 {filtered.map((item, i) => {
                   const cfg = statusConfig[item.status] || statusConfig['成功'];
+                  const rawTask = rawTasks.find((t) => t.task_id === item.id);
+                  const isExpanded = expandedId === item.id;
                   return (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.2, delay: i * 0.02 }}
-                      className="h-14 flex items-center px-4 border-b border-[#EFEDEB] hover:bg-[#FBF7F4] transition-colors group"
                     >
-                      {/* Type */}
-                      <span className="w-16 text-center">
-                        <span className={cn(
-                          'inline-block px-2 py-0.5 rounded text-[11px] font-medium',
-                          item.type === '剧本' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
-                          item.type === '角色' ? 'bg-[#F0F3F7] text-[#5A7FA8]' :
-                          item.type === '分镜' ? 'bg-[#FDF8F0] text-[#C49A3C]' :
-                          item.type === '视频' ? 'bg-[#F0F5F0] text-[#5B8C5A]' :
-                          item.type === '配音' ? 'bg-[#FDF2F0] text-[#B85C50]' :
-                          item.type === 'BGM' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
-                          'bg-[#EFEDEB] text-[#6E6862]'
-                        )}>
-                          {item.type}
+                      <div className="h-14 flex items-center px-4 border-b border-[#EFEDEB] hover:bg-[#FBF7F4] transition-colors group">
+                        {/* Type */}
+                        <span className="w-16 text-center">
+                          <span className={cn(
+                            'inline-block px-2 py-0.5 rounded text-[11px] font-medium',
+                            item.type === '剧本' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
+                            item.type === '角色' ? 'bg-[#F0F3F7] text-[#5A7FA8]' :
+                            item.type === '分镜' ? 'bg-[#FDF8F0] text-[#C49A3C]' :
+                            item.type === '视频' ? 'bg-[#F0F5F0] text-[#5B8C5A]' :
+                            item.type === '配音' ? 'bg-[#FDF2F0] text-[#B85C50]' :
+                            item.type === 'BGM' ? 'bg-[#F5EDE6] text-[#8E6A48]' :
+                            'bg-[#EFEDEB] text-[#6E6862]'
+                          )}>
+                            {item.type}
+                          </span>
                         </span>
-                      </span>
 
-                      {/* Status */}
-                      <span className="w-20 flex justify-center">
-                        <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium', cfg.bg, cfg.text)}>
-                          {cfg.icon}
-                          {item.status}
+                        {/* Status */}
+                        <span className="w-20 flex justify-center">
+                          <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium', cfg.bg, cfg.text)}>
+                            {cfg.icon}
+                            {item.status}
+                          </span>
                         </span>
-                      </span>
 
-                      {/* Project */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-small text-[#383431] truncate">{item.projectName}</p>
-                        {item.detail && <p className="text-[11px] text-[#B85C50] mt-0.5">{item.detail}</p>}
-                      </div>
+                        {/* Project */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-small text-[#383431] truncate">{item.projectName}</p>
+                          {item.detail && <p className="text-[11px] text-[#B85C50] mt-0.5">{item.detail}</p>}
+                        </div>
 
-                      {/* Cost */}
-                      <span className="w-20 text-center text-caption font-mono text-[#6E6862]">{item.cost}</span>
+                        {/* Cost */}
+                        <span className="w-20 text-center text-caption font-mono text-[#6E6862]">{item.cost}</span>
 
-                      {/* Duration */}
-                      <span className="w-24 text-center text-caption text-[#A8A39E]">{item.duration}</span>
+                        {/* Duration */}
+                        <span className="w-24 text-center text-caption text-[#A8A39E]">{item.duration}</span>
 
-                      {/* Time */}
-                      <span className="w-24 text-center text-caption text-[#A8A39E]">{item.createdAt}</span>
+                        {/* Time */}
+                        <span className="w-24 text-center text-caption text-[#A8A39E]">{item.createdAt}</span>
 
-                      {/* Actions */}
-                      <div className="w-20 flex justify-center items-center gap-1">
-                        {item.status === '失败' && (
-                          <button onClick={() => handleRetry(item.id)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all" title="重试">
-                            <RefreshCw size={13} />
+                        {/* Actions */}
+                        <div className="w-20 flex justify-center items-center gap-1">
+                          {item.status === '失败' && (
+                            <button onClick={() => handleRetry(item.id)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all" title="重试">
+                              <RefreshCw size={13} />
+                            </button>
+                          )}
+                          <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className={cn('w-7 h-7 rounded flex items-center justify-center transition-all', isExpanded ? 'text-[#5A7FA8] bg-[#F0F3F7]' : 'text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] opacity-0 group-hover:opacity-100')} title="查看详情">
+                            <Eye size={13} />
                           </button>
-                        )}
-                        <button onClick={() => toastInfo(`查看「${item.projectName}」的${item.type}详情`)} className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] transition-all opacity-0 group-hover:opacity-100" title="查看详情">
-                          <Eye size={13} />
-                        </button>
+                        </div>
                       </div>
+                      {/* Inline Detail Panel */}
+                      <AnimatePresence>
+                        {isExpanded && rawTask && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden border-b border-[#EFEDEB] bg-[#FAFAF9]"
+                          >
+                            <div className="px-4 py-3 space-y-2 text-[12px]">
+                              {rawTask.detail && (
+                                <div>
+                                  <span className="text-[#8B847E] font-medium">详情：</span>
+                                  <span className="text-[#383431]">{rawTask.detail}</span>
+                                </div>
+                              )}
+                              {rawTask.error_message && (
+                                <div>
+                                  <span className="text-[#B85C50] font-medium">错误信息：</span>
+                                  <span className="text-[#B85C50]">{rawTask.error_message}</span>
+                                </div>
+                              )}
+                              {rawTask.result && Object.keys(rawTask.result).length > 0 && (
+                                <div>
+                                  <span className="text-[#8B847E] font-medium">结果：</span>
+                                  <pre className="mt-1 p-2 bg-white rounded border border-[#DEDBD8] text-[11px] text-[#383431] overflow-x-auto whitespace-pre-wrap">{JSON.stringify(rawTask.result, null, 2)}</pre>
+                                </div>
+                              )}
+                              {!rawTask.detail && !rawTask.error_message && (!rawTask.result || Object.keys(rawTask.result).length === 0) && (
+                                <div className="text-[#A8A39E]">暂无详细信息</div>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   );
                 })}

@@ -9,13 +9,15 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toastInfo, toastError } from '@/hooks/useToast';
-import { Toaster } from 'sonner';
 import {
   getCostSummary,
   type CostOverallSummaryData,
   type CostServiceSummaryData,
   type CostProjectSummaryData,
+  type CostProjectBreakdownData,
 } from '@/lib/api';
+
+type CostBreakdown = CostServiceSummaryData | CostProjectBreakdownData;
 
 function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
   return (
@@ -128,7 +130,6 @@ export default function CostStatistics() {
 
   return (
     <>
-      <Toaster position="top-center" />
       <div className="px-6 py-5 max-w-[1280px] mx-auto">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="mb-6">

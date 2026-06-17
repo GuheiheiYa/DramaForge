@@ -1,12 +1,10 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Toaster } from 'sonner';
 import { Loader2, Sparkles } from 'lucide-react';
 import CharacterGrid from './character/CharacterGrid';
 import CharacterForm from './character/CharacterForm';
 import CharacterDetailDrawer from './character/CharacterDetailDrawer';
 import type { Character } from './character/types';
-import { mockCharacters } from './character/mockData';
 import { useToast, MSG } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
 import ProjectSelector from '@/components/ProjectSelector';
@@ -16,6 +14,7 @@ import {
   updateCharacter as apiUpdateCharacter,
   deleteCharacter as apiDeleteCharacter,
   generateCharacterImage,
+  uploadCharacterAvatar,
   chatStream,
   type CharacterData,
 } from '@/lib/api';
@@ -84,8 +83,8 @@ export default function CharacterManager() {
         setLoading(false);
       })
       .catch((err) => {
-        console.error('[CharacterManager] 加载失败，使用 mock 数据:', err);
-        setCharacters(mockCharacters);
+        console.error('[CharacterManager] 加载失败:', err);
+        setCharacters([]);
         setLoading(false);
       });
   }, [selectedProjectId]);
@@ -172,23 +171,32 @@ export default function CharacterManager() {
         })
         .catch((err) => {
           console.error('[CharacterManager] 删除失败:', err);
-          // 乐观更新：本地也删除
-          setCharacters((prev) => prev.filter((c) => c.id !== character.id));
-          if (detailCharacter?.id === character.id) setDetailCharacter(null);
-          success(MSG.characterDeleted);
+          info('删除失败，请重试');
         });
     }
   }, [detailCharacter, success]);
 
-  const handleSave = useCallback((character: Character) => {
+  const handleSave = useCallback((character: Character, avatarFile?: File | null) => {
     const exists = characters.find((c) => c.id === character.id);
     const apiCall = exists
       ? apiUpdateCharacter(character.id, toApiChar(character, selectedProjectId || 'default'))
       : apiCreateCharacter(toApiChar(character, selectedProjectId || 'default'));
 
     apiCall
-      .then((saved) => {
-        const frontendChar = toFrontendChar(saved as CharacterData);
+      .then(async (saved) => {
+        let frontendChar = toFrontendChar(saved as CharacterData);
+
+        // Upload avatar if provided
+        if (avatarFile) {
+          try {
+            const updated = await uploadCharacterAvatar(frontendChar.id, avatarFile);
+            frontendChar = toFrontendChar(updated);
+          } catch (err) {
+            console.error('[CharacterManager] 头像上传失败:', err);
+            info('头像上传失败，但角色已保存');
+          }
+        }
+
         setCharacters((prev) => {
           const idx = prev.findIndex((c) => c.id === frontendChar.id);
           if (idx >= 0) {
@@ -202,19 +210,9 @@ export default function CharacterManager() {
       })
       .catch((err) => {
         console.error('[CharacterManager] 保存失败:', err);
-        // 乐观更新：本地也保存
-        setCharacters((prev) => {
-          const idx = prev.findIndex((c) => c.id === character.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = character;
-            return next;
-          }
-          return [character, ...prev];
-        });
-        success(editingCharacter ? MSG.updated : MSG.characterSaved);
+        info('保存失败，请重试');
       });
-  }, [characters, editingCharacter, success, selectedProjectId]);
+  }, [characters, editingCharacter, success, info, selectedProjectId]);
 
   const handleOpenDetail = useCallback((character: Character) => {
     setDetailCharacter(character);
@@ -249,7 +247,6 @@ export default function CharacterManager() {
 
   return (
     <>
-      <Toaster position="top-center" />
       <div className="p-8 pt-0 max-w-[1400px] mx-auto">
         {/* Page Header */}
         <motion.div

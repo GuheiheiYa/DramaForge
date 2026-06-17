@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -18,9 +19,10 @@ import {
 } from '@/store/usePipelineStore';
 import { useAppStore, type Project, type ProjectType } from '@/store/useAppStore';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
-import { Toaster } from 'sonner';
+import { usePipelineExecution, type RunPipelineOptions } from '@/hooks/usePipelineExecution';
 import ReactMarkdown from 'react-markdown';
-import { savePipelineScript, savePipelineCharacters, savePipelineStoryboard, getProjects as apiGetProjects, createProject as apiCreateProject, generateVideo } from '@/lib/api';
+import { getProjects as apiGetProjects } from '@/lib/api';
+import { isPipelineBoundToChat, isPipelineVisibleForChat } from '@/lib/pipeline-storage';
 
 // ═══════════════════════════════════════════════════
 // Quick fill hints
@@ -35,29 +37,54 @@ const quickHints = [
 ];
 
 // ═══════════════════════════════════════════════════
-// Project Selector (top bar)
+// Project context (read-only badge)
 // ═══════════════════════════════════════════════════
-function ProjectSelector() {
+function ProjectContextBadge({ projectId }: { projectId: string | null }) {
   const projects = useAppStore((s) => s.projects);
-  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
-  const setSelectedProject = useAppStore((s) => s.setSelectedProject);
-  const addProject = useAppStore((s) => s.addProject);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const project = projectId ? projects.find((p) => p.id === projectId) : null;
 
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  return (
+    <div className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-[#DEDBD8] bg-white/80 text-[11px] text-[#524D48] max-w-[200px]">
+      <FolderOpen size={13} className={cn('shrink-0', project ? 'text-[#A8835F]' : 'text-[#A8A39E]')} />
+      <span className="truncate">
+        {project ? `当前项目：${project.name}` : projectId ? '加载项目中…' : '启动后将创建新项目'}
+      </span>
+    </div>
+  );
+}
+
+const MODE_LABELS: Record<PipelineMode, string> = {
+  auto: '全自动',
+  confirm: '每步确认',
+  preview: '仅预览',
+};
+
+// ═══════════════════════════════════════════════════
+// Pipeline start dialog (new vs existing project)
+// ═══════════════════════════════════════════════════
+function PipelineStartDialog({
+  open,
+  mode,
+  title,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  mode: PipelineMode;
+  title: string;
+  onClose: () => void;
+  onConfirm: (options: RunPipelineOptions) => void;
+}) {
+  const projects = useAppStore((s) => s.projects);
+  const [target, setTarget] = useState<'new' | 'existing'>('new');
+  const [selectedId, setSelectedId] = useState('');
+  const [loadingProjects, setLoadingProjects] = useState(false);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // 加载项目列表
-  useEffect(() => {
+    if (!open) return;
+    setTarget('new');
+    setSelectedId('');
+    setLoadingProjects(true);
     apiGetProjects()
       .then((data) => {
         const apiProjects: Project[] = data.map((p: Record<string, unknown>) => ({
@@ -73,90 +100,126 @@ function ProjectSelector() {
         }));
         useAppStore.setState({ projects: apiProjects });
       })
-      .catch(() => {/* 保留 mock 数据 */});
-  }, []);
+      .catch(() => {/* 保留现有数据 */})
+      .finally(() => setLoadingProjects(false));
+  }, [open]);
 
-  const handleSelect = (id: string) => {
-    setSelectedProject(id);
-    setOpen(false);
-  };
-
-  const handleCreate = async () => {
-    setLoading(true);
-    try {
-      const created = await apiCreateProject({ name: `新项目 ${projects.length + 1}`, type: '漫剧' });
-      const newProject: Project = {
-        id: created.id,
-        name: created.name,
-        type: '漫剧',
-        status: '草稿',
-        progress: 0,
-        currentEpisode: 1,
-        totalEpisodes: 8,
-        lastEdited: '刚刚',
-        thumbnail: '/project-placeholder-1.jpg',
-      };
-      addProject(newProject);
-      setSelectedProject(created.id);
-      setOpen(false);
-      toastSuccess(`项目「${newProject.name}」已创建`);
-    } catch {
-      toastInfo('创建项目失败');
-    } finally {
-      setLoading(false);
+  const handleConfirm = () => {
+    if (target === 'existing' && !selectedId) {
+      toastInfo('请选择一个已有项目');
+      return;
     }
+    onConfirm(target === 'new' ? { createNew: true } : { projectId: selectedId });
   };
 
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="h-7 px-2.5 rounded-md border border-[#DEDBD8] hover:border-[#D9BFA8] text-[11px] text-[#524D48] flex items-center gap-1.5 transition-colors bg-white/80"
+  if (!open) return null;
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-modal flex items-center justify-center p-4"
+    >
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative bg-white rounded-2xl shadow-xl w-full max-w-[440px] overflow-hidden"
       >
-        <FolderOpen size={13} className="text-[#A8835F]" />
-        <span className="hidden sm:inline max-w-[120px] truncate">
-          {selectedProject ? selectedProject.name : '选择项目'}
-        </span>
-        <ChevronDown size={10} className={cn('transition-transform', open && 'rotate-180')} />
-      </button>
-      <AnimatePresence>{open && (
-        <motion.div
-          initial={{ opacity: 0, y: -4, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -4, scale: 0.95 }}
-          transition={{ duration: 0.15 }}
-          className="absolute left-0 top-full mt-1.5 w-56 bg-white rounded-xl shadow-lg border border-[#DEDBD8] py-1.5 z-floating"
-        >
-          <p className="px-3 py-1.5 text-[10px] text-[#A8A39E] uppercase tracking-wider font-medium">当前项目</p>
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => handleSelect(p.id)}
-              className={cn(
-                'w-full px-3 py-2 text-left text-[12px] transition-colors hover:bg-[#F8F7F6]',
-                p.id === selectedProjectId && 'bg-[#FBF7F4]'
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className={cn('font-medium truncate', p.id === selectedProjectId ? 'text-[#755235]' : 'text-[#383431]')}>
-                  {p.name}
-                </span>
-                <span className="text-[10px] text-[#A8A39E]">{p.type}</span>
-              </div>
-            </button>
-          ))}
-          <div className="h-px bg-[#DEDBD8] my-1" />
+        <div className="px-5 py-4 border-b border-[#EFEDEB] flex items-center justify-between">
+          <div>
+            <h3 className="text-[15px] font-semibold text-[#383431]">选择项目归属</h3>
+            <p className="text-[11px] text-[#A8A39E] mt-0.5">
+              「{title}」· {MODE_LABELS[mode]}模式
+            </p>
+          </div>
           <button
-            onClick={handleCreate}
-            disabled={loading}
-            className="w-full px-3 py-2 text-left text-[12px] text-[#A8835F] hover:bg-[#FBF7F4] transition-colors flex items-center gap-2"
+            onClick={onClose}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[#A8A39E] hover:bg-[#F8F7F6]"
           >
-            {loading ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-            新建项目
+            <X size={16} />
           </button>
-        </motion.div>
-      )}</AnimatePresence>
-    </div>
+        </div>
+
+        <div className="p-5 space-y-3">
+          <button
+            type="button"
+            onClick={() => setTarget('new')}
+            className={cn(
+              'w-full p-4 rounded-xl border text-left transition-all',
+              target === 'new'
+                ? 'border-[#A8835F] bg-[#FBF7F4]'
+                : 'border-[#DEDBD8] hover:border-[#D9BFA8]',
+            )}
+          >
+            <p className="text-[13px] font-semibold text-[#383431]">创建新项目</p>
+            <p className="text-[11px] text-[#A8A39E] mt-1">根据当前创意自动创建并启动 Pipeline</p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTarget('existing')}
+            className={cn(
+              'w-full p-4 rounded-xl border text-left transition-all',
+              target === 'existing'
+                ? 'border-[#A8835F] bg-[#FBF7F4]'
+                : 'border-[#DEDBD8] hover:border-[#D9BFA8]',
+            )}
+          >
+            <p className="text-[13px] font-semibold text-[#383431]">加入已有项目</p>
+            <p className="text-[11px] text-[#A8A39E] mt-1">将生成结果写入选中的项目</p>
+          </button>
+
+          {target === 'existing' && (
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-[#EFEDEB] divide-y divide-[#EFEDEB]">
+              {loadingProjects ? (
+                <div className="py-6 flex items-center justify-center text-[#A8A39E]">
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                  加载项目…
+                </div>
+              ) : projects.length === 0 ? (
+                <p className="py-6 text-center text-[12px] text-[#A8A39E]">暂无已有项目，请先创建</p>
+              ) : (
+                projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedId(p.id)}
+                    className={cn(
+                      'w-full px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-[#F8F7F6]',
+                      selectedId === p.id && 'bg-[#FBF7F4]',
+                    )}
+                  >
+                    <span className={cn('font-medium', selectedId === p.id ? 'text-[#755235]' : 'text-[#383431]')}>
+                      {p.name}
+                    </span>
+                    <span className="ml-2 text-[10px] text-[#A8A39E]">{p.type}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-[#EFEDEB] flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="h-9 px-4 rounded-lg border border-[#DEDBD8] text-[12px] text-[#524D48] hover:bg-[#F8F7F6]"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="h-9 px-4 rounded-lg bg-[#A8835F] text-[12px] text-white hover:bg-[#8E6A48]"
+          >
+            开始执行
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
@@ -294,7 +357,23 @@ function ThinkingPanel({ thinking, isStreaming }: { thinking: string; isStreamin
   );
 }
 
-function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onModeSelect?: (mode: PipelineMode) => void }) {
+function MessageBubble({
+  message,
+  onModeSelect,
+  pipelineRunning,
+  onConfirmStep,
+  onRetryStep,
+  onSkipStep,
+  onGoComposer,
+}: {
+  message: ChatMessage;
+  onModeSelect?: (mode: PipelineMode) => void;
+  pipelineRunning?: boolean;
+  onConfirmStep?: () => void;
+  onRetryStep?: (step: number) => void;
+  onSkipStep?: (step: number) => void;
+  onGoComposer?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); toastSuccess('已复制到剪贴板'); }).catch(() => toastInfo('复制失败'));
@@ -302,16 +381,90 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
 
   const isUser = message.role === 'user';
   const hasThinking = !!message.thinking;
+  const isPlanConfirmCard = message.type === 'plan_confirm_card';
   const isPlanCard = message.type === 'plan_card';
 
-  // Plan card — render ModeSelectorCard
+  if (isPlanConfirmCard) {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+          <Bot size={18} className="text-white" />
+        </div>
+        <PlanConfirmCard title={message.content || '创作方案'} disabled={pipelineRunning} />
+      </div>
+    );
+  }
+
+  // Plan card — render ModeSelectorCard (only after user confirms plan)
   if (isPlanCard) {
     return (
       <div className="flex gap-3 justify-start">
         <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48] flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
           <Bot size={18} className="text-white" />
         </div>
-        <ModeSelectorCard title={message.content || 'AI 创作'} onSelect={onModeSelect} />
+        <ModeSelectorCard title={message.content || 'AI 创作'} onSelect={onModeSelect} disabled={pipelineRunning} />
+      </div>
+    );
+  }
+
+  if (message.type === 'progress_update') {
+    return (
+      <div className="flex justify-center">
+        <p className="text-[12px] text-[#A8A39E] px-3 py-1">{message.content}</p>
+      </div>
+    );
+  }
+
+  if (message.type === 'step_complete') {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-[#5B8C5A] flex items-center justify-center shrink-0 mt-0.5">
+          <Check size={16} className="text-white" />
+        </div>
+        <div className="bg-[#F0F5F0] border border-[#D4E8D4] rounded-xl px-4 py-3 max-w-[420px]">
+          <p className="text-[13px] text-[#383431]">{message.content}</p>
+          {onConfirmStep && usePipelineStore.getState().waitingConfirmation && (
+            <button onClick={onConfirmStep} className="mt-2 h-8 px-3 rounded-lg bg-[#A8835F] text-white text-[12px]">确认继续</button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (message.type === 'error_card' && !message.resolved) {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-[#B85C50] flex items-center justify-center shrink-0 mt-0.5">
+          <X size={16} className="text-white" />
+        </div>
+        <div className="bg-[#FDF2F0] border border-[#E8C4BC] rounded-xl px-4 py-3 max-w-[420px]">
+          <p className="text-[13px] text-[#B85C50]">{message.content}</p>
+          <div className="flex gap-2 mt-2">
+            {message.pipelineError?.retryable && (
+              <button onClick={() => onRetryStep?.(message.pipelineStep ?? 0)} className="h-8 px-3 rounded-lg bg-[#A8835F] text-white text-[12px]">重试</button>
+            )}
+            <button onClick={() => onSkipStep?.(message.pipelineStep ?? 0)} className="h-8 px-3 rounded-lg border border-[#DEDBD8] text-[12px]">跳过</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (message.type === 'pipeline_complete') {
+    return (
+      <div className="flex gap-3 justify-start">
+        <div className="w-9 h-9 rounded-full bg-[#5B8C5A] flex items-center justify-center shrink-0 mt-0.5">
+          <Film size={16} className="text-white" />
+        </div>
+        <div className="bg-white border border-[#DEDBD8] rounded-2xl px-5 py-4 max-w-[440px] shadow-sm">
+          <p className="text-[14px] font-semibold text-[#383431] mb-1">✓ 《{message.content}》制作完成</p>
+          <p className="text-[12px] text-[#A8A39E] mb-3">剧本/角色/分镜已保存，视频片段已导入合成室</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={onGoComposer} className="h-8 px-3 rounded-lg bg-[#A8835F] text-white text-[12px]">查看成片</button>
+            <button onClick={() => window.location.hash = '#/script'} className="h-8 px-3 rounded-lg border border-[#DEDBD8] text-[12px]">编辑剧本</button>
+            <button onClick={() => window.location.hash = '#/storyboard'} className="h-8 px-3 rounded-lg border border-[#DEDBD8] text-[12px]">调整分镜</button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -469,7 +622,7 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
 }
 
 function TypingIndicator({ stage }: { stage?: 'analyzing' | 'replying' | null }) {
-  const label = stage === 'analyzing' ? '正在分析创意，生成项目数据...' : stage === 'replying' ? 'AI 正在回复...' : 'AI思考中...';
+  const label = stage === 'replying' ? '正在生成创作方案...' : 'AI思考中...';
   return (
     <div className="flex gap-3 pl-12">
       <div className="bg-white rounded-2xl rounded-bl-sm shadow-sm border border-[#EFEDEB] px-5 py-4">
@@ -534,7 +687,21 @@ function ChatInput({ onQuickFill }: { onQuickFill?: (text: string) => void }) {
   const uploadBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (onQuickFill) { (window as unknown as Record<string, unknown>).__chatFillInput = (text: string) => { setInput(text); setTimeout(() => { if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px'; inputRef.current.focus(); } }, 0); }; }
+    (window as unknown as Record<string, unknown>).__chatFocusInput = () => {
+      setTimeout(() => inputRef.current?.focus(), 0);
+    };
+    if (onQuickFill) {
+      (window as unknown as Record<string, unknown>).__chatFillInput = (text: string) => {
+        setInput(text);
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.style.height = 'auto';
+            inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 200) + 'px';
+            inputRef.current.focus();
+          }
+        }, 0);
+      };
+    }
   }, [onQuickFill]);
 
   const handleSend = useCallback(() => {
@@ -710,7 +877,17 @@ function StepBar() {
 // ═══════════════════════════════════════════════════
 function ScriptPreview() {
   const data = usePipelineStore((s) => s.steps[0].data) as ScriptData | null;
-  if (!data) return <EmptyStep message="等待剧本生成..." />;
+  const stepStatus = usePipelineStore((s) => s.steps[0].status);
+  const progress = usePipelineStore((s) => s.steps[0].progress);
+  if (!data) {
+    const hint =
+      stepStatus === 'running'
+        ? progress > 0
+          ? `AI 正在生成剧本… ${progress}%（后台调用，浏览器无新请求属正常）`
+          : 'AI 正在生成剧本… 约 1–3 分钟（后台调用 MiMo，请稍候）'
+        : '等待剧本生成…';
+    return <EmptyStep message={hint} />;
+  }
   return (
     <div className="space-y-3">
       {data.episodes.map((ep) => (
@@ -817,8 +994,17 @@ function VideoPreview() {
 }
 
 function AudioPreview() {
-  const data = usePipelineStore((s) => s.steps[4].data) as AudioData | null;
+  const data = usePipelineStore((s) => s.steps[4].data) as (AudioData & { status?: string; reason?: string }) | null;
   if (!data) return <EmptyStep message="等待配音生成..." />;
+  if (data.status === 'skipped') {
+    return (
+      <div className="space-y-3">
+        <div className="bg-[#FFF8E6] border border-[#F0E0B0] rounded-lg p-3 text-[12px] text-[#8A7340]">
+          配音功能开发中 · 可跳过或稍后在合成室手动添加音频
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
       <h4 className="text-[12px] font-semibold text-[#383431]">角色配音</h4>
@@ -848,10 +1034,16 @@ function AudioPreview() {
 }
 
 function ComposePreview() {
-  const data = usePipelineStore((s) => s.steps[5].data) as ComposeData | null;
+  const data = usePipelineStore((s) => s.steps[5].data) as (ComposeData & { message?: string; clips?: unknown[] }) | null;
+  const projectId = usePipelineStore((s) => s.projectId);
   if (!data) return <EmptyStep message="等待合成..." />;
   return (
     <div className="space-y-4">
+      {data.message && (
+        <div className="bg-[#F0F3F7] border border-[#D8E0F0] rounded-lg p-3 text-[12px] text-[#5A7FA8]">
+          {data.message}
+        </div>
+      )}
       <div className="aspect-video bg-gradient-to-br from-[#1a1a2e] to-[#0f3460] rounded-xl flex items-center justify-center">
         {data.status === 'done' ? (
           <div className="text-center">
@@ -871,6 +1063,12 @@ function ComposePreview() {
       <div className="flex items-center justify-between text-[12px]">
         <span className="text-[#A8A39E]">分辨率</span><span className="text-[#383431] font-medium">{data.resolution}</span>
       </div>
+      <button
+        onClick={() => { window.location.hash = projectId ? `#/composer?projectId=${projectId}` : '#/composer'; }}
+        className="w-full h-9 rounded-lg bg-[#A8835F] text-white text-[12px] font-medium"
+      >
+        前往合成室编辑
+      </button>
     </div>
   );
 }
@@ -885,9 +1083,104 @@ function EmptyStep({ message }: { message: string }) {
 }
 
 // ═══════════════════════════════════════════════════
+// Plan Confirm Card
+// ═══════════════════════════════════════════════════
+function PlanConfirmCard({ title, disabled }: { title: string; disabled?: boolean }) {
+  const creativePlanText = useChatStore((s) => s.creativePlanText);
+  const planConfirmed = useChatStore((s) => s.planConfirmed);
+  const confirmPlan = useChatStore((s) => s.confirmPlan);
+  const regeneratePlan = useChatStore((s) => s.regeneratePlan);
+  const isGenerating = useChatStore((s) => s.isGenerating);
+  const [expanded, setExpanded] = useState(false);
+
+  const preview = creativePlanText || '';
+  const summary = preview.slice(0, 180) + (preview.length > 180 ? '…' : '');
+
+  const handleModify = () => {
+    toastInfo('请在下方输入修改意见，发送后 AI 将根据你的反馈调整方案');
+    const fn = (window as unknown as Record<string, unknown>).__chatFocusInput;
+    if (typeof fn === 'function') fn();
+  };
+
+  if (planConfirmed) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        className="bg-[#F0F5F0] border border-[#D4E8D4] rounded-2xl p-4 max-w-[480px]">
+        <p className="text-[13px] font-semibold text-[#383431]">✓ 方案已确认</p>
+        <p className="text-[11px] text-[#6E6862] mt-1">「{title}」— 请在下方选择执行模式开始制作</p>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+      className="bg-white rounded-2xl border border-[#EFEDEB] shadow-sm p-5 max-w-[480px]">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-lg bg-[#FBF7F4] flex items-center justify-center">
+          <Wand2 size={16} className="text-[#A8835F]" />
+        </div>
+        <div>
+          <p className="text-[13px] font-semibold text-[#383431]">请确认创作方案</p>
+          <p className="text-[10px] text-[#A8A39E]">「{title}」</p>
+        </div>
+      </div>
+      <div className="bg-[#F8F7F6] rounded-lg p-3 mb-4 text-[12px] text-[#524D48] leading-relaxed max-h-[200px] overflow-y-auto">
+        {expanded ? (
+          <div className="whitespace-pre-wrap">{preview || '暂无方案内容'}</div>
+        ) : (
+          <p>{summary || '暂无方案内容'}</p>
+        )}
+        {preview.length > 180 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-[11px] text-[#A8835F] mt-2 hover:underline"
+          >
+            {expanded ? '收起' : '展开全文'}
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-[#6E6862] mb-3">确认后将进入制作流程（剧本 → 角色 → 分镜 → 视频 → 合成）</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={disabled || isGenerating || !preview.trim()}
+          onClick={() => confirmPlan()}
+          className={cn(
+            'h-9 px-4 rounded-lg text-[12px] font-medium transition-colors',
+            disabled || isGenerating || !preview.trim()
+              ? 'bg-[#EFEDEB] text-[#A8A39E] cursor-not-allowed'
+              : 'bg-[#A8835F] text-white hover:bg-[#8E6A48]',
+          )}
+        >
+          确认方案
+        </button>
+        <button
+          type="button"
+          disabled={disabled || isGenerating}
+          onClick={handleModify}
+          className="h-9 px-4 rounded-lg border border-[#DEDBD8] text-[12px] text-[#524D48] hover:bg-[#F8F7F6] disabled:opacity-50"
+        >
+          继续修改
+        </button>
+        <button
+          type="button"
+          disabled={disabled || isGenerating}
+          onClick={() => regeneratePlan()}
+          className="h-9 px-4 rounded-lg border border-[#DEDBD8] text-[12px] text-[#524D48] hover:bg-[#F8F7F6] disabled:opacity-50 flex items-center gap-1"
+        >
+          <RefreshCw size={12} />
+          重新生成
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
 // Mode Selector Card
 // ═══════════════════════════════════════════════════
-function ModeSelectorCard({ title, onSelect }: { title: string; onSelect?: (mode: PipelineMode) => void }) {
+function ModeSelectorCard({ title, onSelect, disabled }: { title: string; onSelect?: (mode: PipelineMode) => void; disabled?: boolean }) {
   const modes: Array<{ key: PipelineMode; icon: React.ReactNode; label: string; desc: string }> = [
     { key: 'auto', icon: <Rocket size={16} />, label: '全自动', desc: '一口气执行完所有步骤' },
     { key: 'confirm', icon: <Hand size={16} />, label: '每步确认', desc: '每完成一步暂停确认' },
@@ -910,8 +1203,11 @@ function ModeSelectorCard({ title, onSelect }: { title: string; onSelect?: (mode
       <p className="text-[11px] text-[#6E6862] mb-2 font-medium">选择执行模式：</p>
       <div className="grid grid-cols-3 gap-2">
         {modes.map((m) => (
-          <button key={m.key} onClick={() => onSelect?.(m.key)}
-            className="flex flex-col items-center gap-1.5 p-3 rounded-xl border border-[#DEDBD8] hover:border-[#A8835F] hover:bg-[#FBF7F4] transition-all">
+          <button key={m.key} disabled={disabled} onClick={() => !disabled && onSelect?.(m.key)}
+            className={cn(
+              'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all',
+              disabled ? 'border-[#EFEDEB] opacity-50 cursor-not-allowed' : 'border-[#DEDBD8] hover:border-[#A8835F] hover:bg-[#FBF7F4]',
+            )}>
             <span className="text-[#A8835F]">{m.icon}</span>
             <span className="text-[11px] font-semibold text-[#383431]">{m.label}</span>
             <span className="text-[9px] text-[#A8A39E] text-center">{m.desc}</span>
@@ -928,8 +1224,30 @@ function ModeSelectorCard({ title, onSelect }: { title: string; onSelect?: (mode
 function PipelinePanel() {
   const currentStep = usePipelineStore((s) => s.currentStep);
   const status = usePipelineStore((s) => s.status);
+  const projectTitle = usePipelineStore((s) => s.projectTitle);
+  const projectId = usePipelineStore((s) => s.projectId);
+  const stale = usePipelineStore((s) => s.stale);
+  const pipelineError = usePipelineStore((s) => s.error);
+  const waitingConfirmation = usePipelineStore((s) => s.waitingConfirmation);
   const setPanelOpen = usePipelineStore((s) => s.setPanelOpen);
-  const resumePipeline = usePipelineStore((s) => s.resumePipeline);
+  const projects = useAppStore((s) => s.projects);
+
+  const {
+    confirmAndResume,
+    retryCurrentStep,
+    cancelActivePipeline,
+  } = usePipelineExecution();
+
+  const boundProjectName = useMemo(() => {
+    if (!projectId) return projectTitle || '未绑定项目';
+    return projects.find((p) => p.id === projectId)?.name || projectTitle || '当前项目';
+  }, [projectId, projectTitle, projects]);
+
+  const showRetry =
+    status === 'failed'
+    || !!pipelineError
+    || stale
+    || status === 'running';
 
   const stepComponents = [ScriptPreview, CharacterPreview, StoryboardPreview, VideoPreview, AudioPreview, ComposePreview];
   const CurrentStepComponent = stepComponents[currentStep] || EmptyStep;
@@ -938,22 +1256,53 @@ function PipelinePanel() {
     <div className="h-full flex flex-col bg-white">
       {/* Top bar */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-[#EFEDEB] shrink-0 bg-[#F8F7F6]">
-        <div className="flex items-center gap-2">
-          {status === 'running' && <span className="w-2 h-2 rounded-full bg-[#5A7FA8] animate-pulse" />}
-          {status === 'paused' && <span className="w-2 h-2 rounded-full bg-[#C49A3C]" />}
-          {status === 'completed' && <span className="w-2 h-2 rounded-full bg-[#5B8C5A]" />}
-          {status === 'failed' && <span className="w-2 h-2 rounded-full bg-[#B85C50]" />}
-          <span className="text-[13px] font-semibold text-[#383431]">制作进度</span>
-          {status === 'paused' && (
-            <button onClick={resumePipeline} className="ml-2 px-2 py-0.5 rounded text-[10px] bg-[#5A7FA8] text-white hover:bg-[#4A6F8A] transition-colors">
+        <div className="flex items-center gap-2 min-w-0">
+          {status === 'running' && <span className="w-2 h-2 rounded-full bg-[#5A7FA8] animate-pulse shrink-0" />}
+          {status === 'paused' && <span className="w-2 h-2 rounded-full bg-[#C49A3C] shrink-0" />}
+          {status === 'completed' && <span className="w-2 h-2 rounded-full bg-[#5B8C5A] shrink-0" />}
+          {status === 'failed' && <span className="w-2 h-2 rounded-full bg-[#B85C50] shrink-0" />}
+          <div className="min-w-0">
+            <span className="text-[13px] font-semibold text-[#383431]">制作进度</span>
+            <p className="text-[10px] text-[#A8A39E] truncate" title={boundProjectName}>
+              项目：{boundProjectName}
+            </p>
+          </div>
+          {waitingConfirmation && status === 'paused' && (
+            <button
+              onClick={() => { void confirmAndResume(); }}
+              className="ml-1 px-2 py-0.5 rounded text-[10px] bg-[#5A7FA8] text-white hover:bg-[#4A6F8A] transition-colors shrink-0"
+            >
               继续
             </button>
           )}
+          {showRetry && (
+            <button
+              onClick={() => { void retryCurrentStep(); }}
+              className="ml-1 px-2 py-0.5 rounded text-[10px] border border-[#DEDBD8] text-[#524D48] hover:border-[#A8835F] hover:bg-[#FBF7F4] transition-colors shrink-0 flex items-center gap-1"
+            >
+              <RefreshCw size={10} />
+              重试
+            </button>
+          )}
+          {status !== 'idle' && status !== 'completed' && (
+            <button
+              onClick={() => { void cancelActivePipeline(); }}
+              className="ml-1 px-2 py-0.5 rounded text-[10px] border border-[#E8D4D0] text-[#B85C50] hover:bg-[#FBF4F3] transition-colors shrink-0"
+            >
+              取消
+            </button>
+          )}
         </div>
-        <button onClick={() => setPanelOpen(false)} className="w-6 h-6 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#6E6862] hover:bg-[#EFEDEB] transition-colors">
+        <button onClick={() => setPanelOpen(false)} className="w-6 h-6 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#6E6862] hover:bg-[#EFEDEB] transition-colors shrink-0">
           <X size={14} />
         </button>
       </div>
+
+      {(stale || pipelineError) && (
+        <div className="px-4 py-2 bg-[#FBF4F3] border-b border-[#EFEDEB] text-[11px] text-[#B85C50]">
+          {pipelineError?.message || '进度长时间未更新，可能已卡住。可点击「重试」或「取消」后重新启动。'}
+        </div>
+      )}
 
       {/* Step bar */}
       <StepBar />
@@ -970,6 +1319,10 @@ function PipelinePanel() {
 // MAIN CHAT PAGE
 // ═══════════════════════════════════════════════════
 export default function Chat() {
+  const [searchParams] = useSearchParams();
+  const boundProjectId = searchParams.get('projectId');
+  const boundSessionId = searchParams.get('sessionId');
+
   const currentSession = useChatStore((s) => s.getCurrentSession());
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isGenerating = useChatStore((s) => s.isGenerating);
@@ -979,7 +1332,50 @@ export default function Chat() {
 
   const pipelineStatus = usePipelineStore((s) => s.status);
   const panelOpen = usePipelineStore((s) => s.panelOpen);
-  const startPipeline = usePipelineStore((s) => s.startPipeline);
+  const setPanelOpen = usePipelineStore((s) => s.setPanelOpen);
+  const pipelineProjectId = usePipelineStore((s) => s.projectId);
+  const pipelineChatSessionId = usePipelineStore((s) => s.chatSessionId);
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const sessions = useChatStore((s) => s.sessions);
+
+  const extractedTitle = useChatStore((s) => s.extractedTitle);
+  const lastCreationUserMessage = useChatStore((s) => s.lastCreationUserMessage);
+  const planConfirmed = useChatStore((s) => s.planConfirmed);
+  const projects = useAppStore((s) => s.projects);
+
+  const [startDialogOpen, setStartDialogOpen] = useState(false);
+  const [pendingMode, setPendingMode] = useState<PipelineMode>('auto');
+  const [startingPipeline, setStartingPipeline] = useState(false);
+
+  useEffect(() => {
+    if (!boundProjectId) return;
+    useAppStore.getState().setSelectedProject(boundProjectId);
+    if (projects.some((p) => p.id === boundProjectId)) return;
+    apiGetProjects()
+      .then((data) => {
+        const apiProjects: Project[] = data.map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          name: p.name as string,
+          type: ((p.type as string) || '漫剧') as ProjectType,
+          status: '草稿',
+          progress: 0,
+          currentEpisode: 1,
+          totalEpisodes: (p.episodes as number) || 8,
+          lastEdited: '未知',
+          thumbnail: '/project-placeholder-1.jpg',
+        }));
+        useAppStore.setState({ projects: apiProjects });
+      })
+      .catch(() => {/* 忽略 */});
+  }, [boundProjectId, projects]);
+
+  useEffect(() => {
+    if (!boundSessionId) return;
+    if (sessions.some((s) => s.id === boundSessionId)) {
+      selectSession(boundSessionId);
+    }
+  }, [boundSessionId, sessions, selectSession]);
 
   const messages = useMemo(() => currentSession?.messages ?? [], [currentSession?.messages]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -993,195 +1389,60 @@ export default function Chat() {
     else setTimeout(() => sendMessage(text), 100);
   };
 
-  // 从 ChatStore 中获取从 AI 回复提取的数据
-  const extractedScript = useChatStore((s) => s.extractedScript);
-  const extractedCharacters = useChatStore((s) => s.extractedCharacters);
-  const extractedTitle = useChatStore((s) => s.extractedTitle);
+  const {
+    runPipeline,
+    confirmAndResume,
+    retryFailedStep,
+    skipFailedStep,
+    goToComposer,
+  } = usePipelineExecution();
+
+  const lastUserMessage = useMemo(() => {
+    if (lastCreationUserMessage) return lastCreationUserMessage;
+    const userMsgs = messages.filter((m) => m.role === 'user');
+    return userMsgs[userMsgs.length - 1]?.content || extractedTitle || '创作项目';
+  }, [messages, extractedTitle, lastCreationUserMessage]);
+
+  const planTitle = extractedTitle || lastUserMessage.slice(0, 24) || '创作项目';
+
+  const executePipeline = useCallback(async (mode: PipelineMode, options: RunPipelineOptions) => {
+    setStartingPipeline(true);
+    try {
+      await runPipeline(mode, lastUserMessage, options);
+      setStartDialogOpen(false);
+    } catch (err) {
+      console.error('[Pipeline] 启动失败:', err);
+      toastInfo('Pipeline 启动失败，请检查后端服务');
+    } finally {
+      setStartingPipeline(false);
+    }
+  }, [runPipeline, lastUserMessage]);
 
   const handleModeSelect = async (mode: PipelineMode) => {
-    // 使用从 AI 回复中提取的标题，而非硬编码
-    const title = extractedTitle || '创作项目';
-
-    // 如果没有选中项目，先创建一个新项目
-    let projectId = useAppStore.getState().selectedProjectId;
-    if (!projectId) {
-      try {
-        const created = await apiCreateProject({
-          name: title,
-          type: '漫剧',
-          description: 'AI 生成的项目',
-        });
-        projectId = created.id;
-        useAppStore.getState().setSelectedProject(projectId);
-        useAppStore.getState().addProject({
-          id: created.id,
-          name: created.name,
-          type: '漫剧',
-          status: '草稿',
-          progress: 0,
-          currentEpisode: 1,
-          totalEpisodes: created.episodes || 8,
-          lastEdited: '刚刚',
-          thumbnail: '/project-placeholder-1.jpg',
-        });
-        console.log('[Pipeline] 已创建新项目:', projectId);
-      } catch (err) {
-        console.error('[Pipeline] 创建项目失败:', err);
-        toastInfo('创建项目失败，请先在 Dashboard 创建项目');
-        return;
-      }
-    }
-
-    startPipeline(title, mode);
-    toastSuccess(`已启动「${mode === 'auto' ? '全自动' : mode === 'confirm' ? '每步确认' : '仅预览'}」模式`);
-    // 真实执行 Pipeline — 调用后端 API + Agnes 生成
-    await simulatePipeline();
-  };
-
-  const simulatePipeline = async () => {
-    const store = usePipelineStore.getState();
-    const projectId = useAppStore.getState().selectedProjectId || `proj_${Date.now()}`;
-    const pipelineMode = store.mode || 'auto';
-    console.log('[Pipeline] 启动真实执行, mode:', pipelineMode);
-
-    // ── Step 1: 剧本 ──
-    {
-      const scriptData: ScriptData = useChatStore.getState().extractedScript ?? {
-        episodes: [{ id: 'ep1', number: 1, title: useChatStore.getState().extractedTitle || '第一集', scenes: [{ id: 's1', title: '开场', summary: '（待填充）', location: '未指定', timeTag: '日间' }] }],
-      };
-      store.updateStepData(0, scriptData);
-      store.updateStepProgress(0, 50);
-      // 保存到数据库
-      try {
-        await savePipelineScript({
-          project_id: projectId,
-          title: useChatStore.getState().extractedTitle || '剧本',
-          episodes: scriptData.episodes.map(ep => ({
-            number: ep.number, title: ep.title,
-            scenes: ep.scenes.map(s => ({ title: s.title, summary: s.summary, location: s.location, time_tag: s.timeTag })),
-          })),
-        });
-        console.log('[Pipeline] Step 1 剧本已保存');
-      } catch (err) { console.error('[Pipeline] Step 1 保存失败:', err); }
-      store.updateStepProgress(0, 100);
-      store.completeStep(0, store.steps[0].data);
-      store.advanceToNextStep();
-    }
-
-    // preview 模式只执行到 Step 3
-    if (pipelineMode === 'preview') {
-      console.log('[Pipeline] preview 模式: 停在 Step 3');
-    }
-
-    // ── Step 2: 角色 ──
-    {
-      const charData: CharacterData = useChatStore.getState().extractedCharacters ?? {
-        characters: [{ id: 'char_1', name: '主角', role: '主角', description: '', status: 'done', avatarColor: '#A8835F' }],
-      };
-      charData.characters = charData.characters.map(c => ({ ...c, status: 'done' as const }));
-      store.updateStepData(1, charData);
-      try {
-        await savePipelineCharacters(projectId, charData.characters.map(c => ({
-          name: c.name, role: c.role, description: c.description, avatar_color: c.avatarColor,
-        })));
-        console.log('[Pipeline] Step 2 角色已保存');
-      } catch (err) { console.error('[Pipeline] Step 2 保存失败:', err); }
-      store.completeStep(1, store.steps[1].data);
-      store.advanceToNextStep();
-    }
-
-    if (pipelineMode === 'preview') {
-      // Step 3: 分镜（preview 模式也生成分镜）
-      const scenes = useChatStore.getState().extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
-      const storyboardData: StoryboardData = {
-        shots: scenes.map((s, i) => ({
-          id: `shot_${i + 1}`, shotNumber: i + 1, episodeNumber: 1, sceneTitle: s.title,
-          description: s.summary || '', shotType: ['全景', '中景', '近景', '特写'][i % 4],
-          duration: 3 + (i % 3), status: 'done' as const,
-        })),
-      };
-      store.updateStepData(2, storyboardData);
-      try {
-        await savePipelineStoryboard(projectId, storyboardData.shots.map(s => ({
-          shot_number: s.shotNumber, shot_type: s.shotType, duration: s.duration,
-          description: s.description, scene_ref: s.sceneTitle,
-        })));
-      } catch (err) { console.error('[Pipeline] Step 3 保存失败:', err); }
-      store.completeStep(2, store.steps[2].data);
-      store.completePipeline();
-      toastSuccess('预览模式：剧本/角色/分镜已提取并保存');
+    if (pipelineStatus === 'running' || startingPipeline) return;
+    if (!planConfirmed) {
+      toastInfo('请先确认上方的创作方案');
       return;
     }
-
-    // ── Step 3: 分镜 ──
-    const scenes = useChatStore.getState().extractedScript?.episodes.flatMap(ep => ep.scenes) ?? [];
-    const storyboardData: StoryboardData = {
-      shots: scenes.map((s, i) => ({
-        id: `shot_${i + 1}`, shotNumber: i + 1, episodeNumber: 1, sceneTitle: s.title,
-        description: s.summary || '', shotType: ['全景', '中景', '近景', '特写'][i % 4],
-        duration: 3 + (i % 3), status: 'done' as const,
-      })),
-    };
-    store.updateStepData(2, storyboardData);
-    try {
-      await savePipelineStoryboard(projectId, storyboardData.shots.map(s => ({
-        shot_number: s.shotNumber, shot_type: s.shotType, duration: s.duration,
-        description: s.description, scene_ref: s.sceneTitle,
-      })));
-      console.log('[Pipeline] Step 3 分镜已保存');
-    } catch (err) { console.error('[Pipeline] Step 3 保存失败:', err); }
-    store.completeStep(2, store.steps[2].data);
-    store.advanceToNextStep();
-
-    // ── Step 4: 视频生成（真实调用 Agnes API） ──
-    {
-      const shots = storyboardData.shots;
-      const clips: VideoData['clips'] = [];
-      for (let i = 0; i < shots.length; i++) {
-        const s = shots[i];
-        clips.push({ id: `vid_${s.id}`, shotId: s.id, name: `镜头 ${s.shotNumber} — ${s.sceneTitle}`, duration: s.duration, progress: 0, status: 'generating' });
-      }
-      store.updateStepData(3, { clips, overallProgress: 0 } as VideoData);
-
-      // 逐个生成视频
-      let doneCount = 0;
-      for (let i = 0; i < shots.length; i++) {
-        const s = shots[i];
-        try {
-          const result = await generateVideo({ prompt: s.description || `${s.shotType} shot, ${s.sceneTitle}`, width: 1152, height: 768, num_frames: 49, frame_rate: 24 });
-          clips[i] = { ...clips[i], videoUrl: result.video_url, progress: 100, status: 'done' };
-          console.log(`[Pipeline] Step 4 视频 ${i + 1}/${shots.length} 完成`);
-        } catch (err) {
-          console.warn(`[Pipeline] Step 4 视频 ${i + 1} 失败:`, err);
-          clips[i] = { ...clips[i], status: 'failed', progress: 0 };
-        }
-        doneCount++;
-        store.updateStepData(3, { clips, overallProgress: Math.round((doneCount / shots.length) * 100) });
-      }
-      store.completeStep(3, store.steps[3].data);
-      store.advanceToNextStep();
+    if (boundProjectId) {
+      await executePipeline(mode, { projectId: boundProjectId });
+      return;
     }
+    setPendingMode(mode);
+    setStartDialogOpen(true);
+  };
 
-    // ── Step 5: 配音（预留） ──
-    {
-      const chars = useChatStore.getState().extractedCharacters?.characters ?? [];
-      const audioData: AudioData = {
-        voices: chars.map(c => ({ characterId: c.id, characterName: c.name, voiceName: `${c.name} — 默认音色`, status: 'done' as const })),
-        bgm: { style: '轻柔钢琴', duration: 120, status: 'done' },
-      };
-      store.updateStepData(4, audioData);
-      store.completeStep(4, store.steps[4].data);
-      store.advanceToNextStep();
-    }
+  const handleStartConfirm = (options: RunPipelineOptions) => {
+    void executePipeline(pendingMode, options);
+  };
 
-    // ── Step 6: 合成（预留） ──
-    {
-      const composeData: ComposeData = { videoUrl: null, duration: 120, resolution: '1920x1080', status: 'done' };
-      store.updateStepData(5, composeData);
-      store.completeStep(5, store.steps[5].data);
-      store.completePipeline();
-      toastSuccess('Pipeline 全部完成！');
-    }
+  const bubbleProps = {
+    onModeSelect: handleModeSelect,
+    pipelineRunning: pipelineStatus === 'running' || pipelineStatus === 'paused' || startingPipeline,
+    onConfirmStep: confirmAndResume,
+    onRetryStep: retryFailedStep,
+    onSkipStep: skipFailedStep,
+    onGoComposer: goToComposer,
   };
 
   // Build chat messages including pipeline-related ones
@@ -1190,12 +1451,33 @@ export default function Chat() {
     // Show empty state
   }
 
-  const showPanel = panelOpen && pipelineStatus !== 'idle';
+  const pipelineCtx = useMemo(() => ({
+    status: pipelineStatus,
+    pipelineProjectId,
+    pipelineChatSessionId,
+    currentSessionId,
+    boundProjectId,
+    selectedProjectId,
+  }), [pipelineStatus, pipelineProjectId, pipelineChatSessionId, currentSessionId, boundProjectId, selectedProjectId]);
+
+  const pipelineBound = isPipelineBoundToChat(pipelineCtx);
+  const showPanel = isPipelineVisibleForChat({ ...pipelineCtx, panelOpen });
+
+  useEffect(() => {
+    if (!pipelineBound || pipelineStatus === 'idle') return;
+
+    if (pipelineChatSessionId && currentSessionId !== pipelineChatSessionId) {
+      const session = sessions.find((s) => s.id === pipelineChatSessionId);
+      if (session) selectSession(pipelineChatSessionId);
+    }
+
+    if (!usePipelineStore.getState().panelOpen) {
+      setPanelOpen(true);
+    }
+  }, [pipelineBound, pipelineStatus, pipelineChatSessionId, currentSessionId, sessions, selectSession, setPanelOpen]);
 
   return (
     <div className="h-[calc(100dvh-52px)] flex flex-col bg-gradient-to-b from-[#FBF7F4] to-[#F5EDE6] overflow-hidden">
-      <Toaster position="top-center" />
-
       {/* Top Bar */}
       <div className="h-14 flex items-center justify-between px-4 md:px-6 shrink-0 bg-white/40 backdrop-blur-md border-b border-[#DEDBD8]/50">
         <div className="flex items-center gap-3 min-w-0">
@@ -1207,10 +1489,32 @@ export default function Chat() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <ProjectSelector />
+          {pipelineBound && !showPanel && (
+            <button
+              type="button"
+              onClick={() => setPanelOpen(true)}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#DEDBD8] bg-white/90 text-[11px] font-medium text-[#5A7FA8] hover:border-[#5A7FA8] hover:bg-[#F0F3F7] transition-colors"
+            >
+              <Film size={14} />
+              打开制作面板
+            </button>
+          )}
+          <ProjectContextBadge projectId={boundProjectId} />
           <ModelSkillBar />
         </div>
       </div>
+
+      <AnimatePresence>
+        {startDialogOpen && (
+          <PipelineStartDialog
+            open={startDialogOpen}
+            mode={pendingMode}
+            title={planTitle}
+            onClose={() => !startingPipeline && setStartDialogOpen(false)}
+            onConfirm={handleStartConfirm}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Main content: chat + optional panel */}
       <div className="flex-1 min-h-0">
@@ -1220,7 +1524,7 @@ export default function Chat() {
               <div className="h-full flex flex-col">
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
-                    {allMessages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
+                    {allMessages.map((msg) => <MessageBubble key={msg.id} message={msg} {...bubbleProps} />)}
                     {isGenerating && <TypingIndicator stage={pipelineStage} />}
                     <div ref={messagesEndRef} />
                   </div>
@@ -1238,7 +1542,7 @@ export default function Chat() {
             <div className="flex-1 overflow-y-auto min-h-0">
               {currentSessionId && messages.length > 0 ? (
                 <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
-                  {messages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
+                  {messages.map((msg) => <MessageBubble key={msg.id} message={msg} {...bubbleProps} />)}
                   {isGenerating && <TypingIndicator stage={pipelineStage} />}
                   <div ref={messagesEndRef} />
                 </div>

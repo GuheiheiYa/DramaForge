@@ -2,7 +2,9 @@
  * 前端 API 服务层 — 统一的后端接口封装。
  */
 
-const API_BASE = 'http://localhost:7779/api/v1';
+import { API_BASE, API_ORIGIN } from '@/lib/config';
+
+export { API_BASE, API_ORIGIN };
 
 // ─── 通用 fetch 封装 ───
 
@@ -236,6 +238,23 @@ export const deleteCharacter = (id: string) => request<{ message: string }>(`/ch
   method: 'DELETE',
 });
 
+export const uploadCharacterAvatar = async (characterId: string, file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const resp = await fetch(`${API_BASE}/characters/${characterId}/upload-avatar`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Upload avatar ${resp.status}: ${errText}`);
+  }
+
+  return resp.json() as Promise<CharacterData>;
+};
+
 // ─── Image Generation API ───
 
 export const generateCharacterImage = (characterId: string) =>
@@ -367,6 +386,200 @@ export const savePipelineCharacters = (project_id: string, characters: {
   method: 'POST',
   body: JSON.stringify({ project_id, characters }),
 });
+
+export const savePipelineStoryboard = (project_id: string, shots: {
+  shot_number?: number;
+  shot_type?: string;
+  duration?: number;
+  status?: string;
+  description?: string;
+  camera_movement?: string;
+  composition?: string;
+  lighting?: string;
+  character_action?: string;
+  dialogue?: string;
+  scene_ref?: string;
+  characters?: string[];
+}[]) => request<ShotData[]>('/pipeline/save-storyboard', {
+  method: 'POST',
+  body: JSON.stringify({ project_id, shots }),
+});
+
+export type PipelineMode = 'auto' | 'confirm' | 'preview';
+
+export interface PipelineSSEEvent {
+  type: 'snapshot' | 'step_progress' | 'step_completed' | 'step_failed' | 'waiting_confirmation' | 'pipeline_completed' | 'pipeline_failed';
+  pipeline_id?: string;
+  step?: number;
+  progress?: number;
+  data?: unknown;
+  error?: { message: string; retryable: boolean; step?: string };
+  timestamp?: string;
+  project_id?: string;
+  status?: string;
+  current_step?: number;
+  steps?: Array<{ id: string; label: string; status: string; progress: number; data: unknown }>;
+  mode?: PipelineMode;
+  waiting_confirmation?: boolean;
+}
+
+export interface PipelineRunStatus {
+  pipeline_id: string;
+  id?: string;
+  project_id: string;
+  status: string;
+  current_step: number;
+  steps: PipelineSSEEvent['steps'];
+  mode: PipelineMode;
+  error: PipelineSSEEvent['error'] | null;
+  waiting_confirmation: boolean;
+}
+
+/** 从 API 响应中解析 pipeline id（兼容 id / pipeline_id） */
+export function resolvePipelineId(
+  run: Partial<PipelineRunStatus> & { id?: string } | null | undefined,
+): string {
+  const id = run?.pipeline_id || run?.id || '';
+  return id && id !== 'undefined' ? id : '';
+}
+
+export const getLatestPipelineRun = (projectId: string) =>
+  request<PipelineRunStatus>(`/pipeline/runs/latest?project_id=${encodeURIComponent(projectId)}`);
+
+export const startPipeline = async (data: {
+  project_id: string;
+  creative_input: string;
+  mode: PipelineMode;
+  skill_id?: string;
+  structured_data?: Record<string, unknown> | null;
+  confirmed_plan?: string | null;
+}) => {
+  const resp = await fetch(`${API_BASE}/pipeline/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`API ${resp.status}: ${errText}`);
+  }
+  const run = await resp.json() as PipelineRunStatus & Record<string, unknown>;
+  let pipelineId = resolvePipelineId(run) || resp.headers.get('X-Pipeline-Id') || '';
+
+  if (!pipelineId || pipelineId === 'undefined') {
+    console.warn('[Pipeline] /start 响应缺少 pipeline_id，尝试从最新运行记录恢复…', run);
+    try {
+      const latest = await getLatestPipelineRun(data.project_id);
+      pipelineId = resolvePipelineId(latest);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!pipelineId || pipelineId === 'undefined') {
+    console.error('[Pipeline] /start 响应缺少 pipeline_id:', run);
+    throw new Error(
+      'Pipeline 启动失败：后端未返回 pipeline_id。请关闭旧的后端进程后，在 backend 目录执行 python run.py',
+    );
+  }
+  return { ...run, pipeline_id: pipelineId, id: pipelineId };
+};
+
+export const getPipelineRun = (pipelineId: string) => {
+  const id = resolvePipelineId({ pipeline_id: pipelineId });
+  if (!id) return Promise.reject(new Error('无效的 pipeline id'));
+  return request<PipelineRunStatus>(`/pipeline/${id}`);
+};
+
+export const pausePipeline = (pipelineId: string) =>
+  request<{ message: string }>(`/pipeline/${pipelineId}/pause`, { method: 'POST' });
+
+export const resumePipeline = (pipelineId: string) =>
+  request<{ message: string }>(`/pipeline/${pipelineId}/resume`, { method: 'POST' });
+
+export const retryPipelineStep = (pipelineId: string, stepIndex: number) =>
+  request<{ message: string }>(`/pipeline/${pipelineId}/retry/${stepIndex}`, { method: 'POST' });
+
+export const skipPipelineStep = (pipelineId: string, stepIndex: number) =>
+  request<{ message: string }>(`/pipeline/${pipelineId}/skip/${stepIndex}`, { method: 'POST' });
+
+export function listenPipelineStream(
+  pipelineId: string,
+  onEvent: (event: PipelineSSEEvent) => void,
+  onError?: (err: Error) => void,
+): () => void {
+  const id = resolvePipelineId({ pipeline_id: pipelineId });
+  if (!id) {
+    onError?.(new Error('无效的 pipeline id'));
+    return () => {};
+  }
+
+  const controller = new AbortController();
+  (async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/pipeline/${id}/stream`, {
+        signal: controller.signal,
+        headers: { Accept: 'text/event-stream' },
+      });
+      if (!resp.ok) throw new Error(`Pipeline stream ${resp.status}`);
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error('No stream');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            onEvent(JSON.parse(line.slice(6)) as PipelineSSEEvent);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') onError?.(err as Error);
+    }
+  })();
+  return () => controller.abort();
+}
+
+export interface TimelineClipData {
+  id: string;
+  project_id: string;
+  name: string;
+  track_type: string;
+  start_time: number;
+  duration: number;
+  status: string;
+  shot_ref: string;
+  color: string;
+  media_url: string;
+}
+
+export const getTimelineClips = (projectId: string) =>
+  request<TimelineClipData[]>(`/timeline?project_id=${encodeURIComponent(projectId)}`);
+
+export const createTimelineClip = (data: {
+  project_id: string;
+  name: string;
+  track_type?: string;
+  start_time?: number;
+  duration?: number;
+  media_url?: string;
+  shot_ref?: string;
+  color?: string;
+}) => request<TimelineClipData>('/timeline', {
+  method: 'POST',
+  body: JSON.stringify(data),
+});
+
+export const deleteTimelineClip = (clipId: string) =>
+  request<{ message: string }>(`/timeline/${clipId}`, { method: 'DELETE' });
 
 // ─── Chat Stream API (SSE) ───
 

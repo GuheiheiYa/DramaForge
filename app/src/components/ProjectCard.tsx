@@ -8,6 +8,8 @@ import {
   Trash2,
   FolderOpen,
   ArrowRight,
+  Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 import type { Project } from '@/store/useAppStore';
 import type { StatusType } from './StatusBadge';
@@ -19,6 +21,7 @@ interface ProjectCardProps {
   index: number;
   viewMode: 'grid' | 'list';
   onNavigate: () => void;
+  onContinueCreate?: () => void;
   onDelete: () => void;
   onRename: () => void;
   onDuplicate: () => void;
@@ -37,6 +40,7 @@ export default function ProjectCard({
   index,
   viewMode,
   onNavigate,
+  onContinueCreate,
   onDelete,
   onRename,
   onDuplicate,
@@ -172,6 +176,11 @@ export default function ProjectCard({
           {menuOpen && (
             <ContextMenu
               onClose={() => setMenuOpen(false)}
+              onContinueCreate={onContinueCreate ? (e) => {
+                e.stopPropagation();
+                onContinueCreate();
+                setMenuOpen(false);
+              } : undefined}
               onRename={(e) => {
                 e.stopPropagation();
                 onRename();
@@ -206,15 +215,60 @@ export default function ProjectCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.05, ease: [0, 0, 0.2, 1] as [number, number, number, number] }}
       whileHover={{ y: -4 }}
-      className="bg-white rounded-xl border border-[#DEDBD8] shadow-md hover:shadow-lg hover:border-[#D9BFA8] transition-shadow cursor-pointer group overflow-hidden relative"
+      className={`bg-white rounded-xl border border-[#DEDBD8] shadow-md hover:shadow-lg hover:border-[#D9BFA8] transition-shadow cursor-pointer group relative ${
+        menuOpen ? 'z-30' : 'z-0'
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => {
         if (!menuOpen && !isRenaming) onNavigate();
       }}
     >
+      {/* More actions — 放在卡片层级，避免被 overflow 裁切 */}
+      <div className="absolute top-3 right-3 z-20" ref={menuRef} onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenuOpen(!menuOpen);
+          }}
+          className="w-7 h-7 rounded-md bg-white/80 backdrop-blur flex items-center justify-center text-[#8B847E] hover:bg-white hover:text-[#383431] transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <MoreHorizontal size={15} />
+        </button>
+        {menuOpen && (
+          <ContextMenu
+            onClose={() => setMenuOpen(false)}
+            onContinueCreate={onContinueCreate ? (e) => {
+              e.stopPropagation();
+              onContinueCreate();
+              setMenuOpen(false);
+            } : undefined}
+            onRename={(e) => {
+              e.stopPropagation();
+              onRename();
+              setMenuOpen(false);
+            }}
+            onDuplicate={(e) => {
+              e.stopPropagation();
+              onDuplicate();
+              setMenuOpen(false);
+            }}
+            onExport={(e) => {
+              e.stopPropagation();
+              onExport();
+              setMenuOpen(false);
+            }}
+            onDelete={(e) => {
+              e.stopPropagation();
+              onDelete();
+              setMenuOpen(false);
+            }}
+          />
+        )}
+      </div>
+
       {/* Thumbnail */}
-      <div className="relative aspect-video overflow-hidden bg-[#F5EDE6]">
+      <div className="relative aspect-video overflow-hidden rounded-t-xl bg-[#F5EDE6]">
         <img
           src={project.thumbnail}
           alt={project.name}
@@ -229,7 +283,7 @@ export default function ProjectCard({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="absolute inset-0 bg-black/40 flex items-center justify-center"
+              className="absolute inset-0 bg-black/40 flex items-center justify-center gap-2"
               onClick={(e) => e.stopPropagation()}
             >
               <motion.button
@@ -241,10 +295,25 @@ export default function ProjectCard({
                   e.stopPropagation();
                   onNavigate();
                 }}
-                className="px-5 py-2.5 bg-white rounded-xl text-small font-medium text-[#383431] shadow-lg hover:bg-[#FBF7F4] transition-colors flex items-center gap-2"
+                className="px-4 py-2 bg-white rounded-xl text-small font-medium text-[#383431] shadow-lg hover:bg-[#FBF7F4] transition-colors flex items-center gap-2"
               >
                 进入编辑 <ArrowRight size={14} />
               </motion.button>
+              {onContinueCreate && (
+                <motion.button
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.8, opacity: 0 }}
+                  transition={{ duration: 0.2, delay: 0.08 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onContinueCreate();
+                  }}
+                  className="px-4 py-2 bg-[#A8835F] rounded-xl text-small font-medium text-white shadow-lg hover:bg-[#8E6A48] transition-colors flex items-center gap-2"
+                >
+                  继续创作 <Sparkles size={14} />
+                </motion.button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -259,44 +328,6 @@ export default function ProjectCard({
         >
           {project.type}
         </span>
-
-        {/* More actions */}
-        <div className="absolute top-3 right-3" ref={menuRef} onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(!menuOpen);
-            }}
-            className="w-7 h-7 rounded-md bg-white/80 backdrop-blur flex items-center justify-center text-[#8B847E] hover:bg-white hover:text-[#383431] transition-colors opacity-0 group-hover:opacity-100"
-          >
-            <MoreHorizontal size={15} />
-          </button>
-          {menuOpen && (
-            <ContextMenu
-              onClose={() => setMenuOpen(false)}
-              onRename={(e) => {
-                e.stopPropagation();
-                onRename();
-                setMenuOpen(false);
-              }}
-              onDuplicate={(e) => {
-                e.stopPropagation();
-                onDuplicate();
-                setMenuOpen(false);
-              }}
-              onExport={(e) => {
-                e.stopPropagation();
-                onExport();
-                setMenuOpen(false);
-              }}
-              onDelete={(e) => {
-                e.stopPropagation();
-                onDelete();
-                setMenuOpen(false);
-              }}
-            />
-          )}
-        </div>
 
         {/* Bottom gradient */}
         <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
@@ -361,12 +392,14 @@ export default function ProjectCard({
 /* ═══ Context Menu ═══ */
 function ContextMenu({
   onClose,
+  onContinueCreate,
   onRename,
   onDuplicate,
   onExport,
   onDelete,
 }: {
   onClose: () => void;
+  onContinueCreate?: (e: React.MouseEvent) => void;
   onRename: (e: React.MouseEvent) => void;
   onDuplicate: (e: React.MouseEvent) => void;
   onExport: (e: React.MouseEvent) => void;
@@ -377,8 +410,17 @@ function ContextMenu({
       initial={{ scale: 0.95, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] as [number, number, number, number] }}
-      className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-lg border border-[#DEDBD8] py-1 z-floating"
+      className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-lg border border-[#DEDBD8] py-1 z-50"
     >
+      {onContinueCreate && (
+        <button
+          onClick={onContinueCreate}
+          className="w-full px-4 py-2 text-left text-small text-[#524D48] hover:bg-[#F8F7F6] flex items-center gap-2 transition-colors"
+        >
+          <MessageSquare size={14} /> 继续创作
+        </button>
+      )}
+      {onContinueCreate && <div className="h-px bg-[#EFEDEB] my-1" />}
       <button
         onClick={onRename}
         className="w-full px-4 py-2 text-left text-small text-[#524D48] hover:bg-[#F8F7F6] flex items-center gap-2 transition-colors"

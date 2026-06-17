@@ -15,7 +15,7 @@ import {
   Square,
 } from 'lucide-react';
 import type { Shot, ShotFilter } from './types';
-import { SHOT_TYPE_STYLES, SHOT_TYPE_OPTIONS } from './types';
+import { getShotTypeStyle, SHOT_TYPE_OPTIONS } from './types';
 import { cn } from '@/lib/utils';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 
@@ -182,7 +182,7 @@ export default function ShotList({
           {/* Shot cards */}
           <div className="flex-1 overflow-y-auto">
             {filteredShots.map((shot, index) => {
-              const shotStyle = SHOT_TYPE_STYLES[shot.shotType];
+              const shotStyle = getShotTypeStyle(shot.shotType);
               const isSelected = shot.id === selectedShotId;
               const isHovered = shot.id === hoveredId;
               const isChecked = selectedIds.includes(shot.id);

@@ -9,8 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.db_models import Character
-from app.services.image_service import generate_character_image, generate_image
+from app.models.db_models import Character, Project
+from app.services.image_service import (
+    build_unified_style_block,
+    generate_character_image,
+    generate_image,
+)
+from app.services.pipeline_executor import resolve_skill_config
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,22 @@ async def api_generate_character_image(
     if not char:
         raise HTTPException(status_code=404, detail="角色不存在")
 
+    project = await db.get(Project, char.project_id)
+    skill_config = resolve_skill_config(project.skill_id if project else "jp-school")
+    unified_style = build_unified_style_block(skill_config.get("prompt", ""))
+
+    ref_result = await db.execute(
+        select(Character.avatar_url)
+        .where(
+            Character.project_id == char.project_id,
+            Character.id != char.id,
+            Character.avatar_url != "",
+            Character.has_generated_image.is_(True),
+        )
+        .limit(1)
+    )
+    style_reference_url = ref_result.scalar_one_or_none()
+
     # 组装角色信息（全部字段参与 prompt 构建）
     character_info = {
         "name": char.name,
@@ -91,6 +112,8 @@ async def api_generate_character_image(
         "description": char.description or "",
         "background": char.background or "",
         "special_setting": char.special_setting or "",
+        "style_prompt": unified_style,
+        "style_reference_url": style_reference_url,
     }
 
     try:
@@ -99,9 +122,19 @@ async def api_generate_character_image(
         logger.error("[Images] 生成失败: %s", str(e))
         raise HTTPException(status_code=500, detail=f"图像生成失败: {str(e)}")
 
-    # 更新角色形象
+    # 更新角色形象与立绘资产
     char.avatar_url = image_url
     char.has_generated_image = True
+    assets = list(char.assets_json or [])
+    portrait_asset = {
+        "id": f"portrait_{char.id[:8]}",
+        "type": "立绘",
+        "name": f"{char.name}立绘",
+        "thumbnail": image_url,
+    }
+    assets = [a for a in assets if a.get("type") != "立绘"]
+    assets.insert(0, portrait_asset)
+    char.assets_json = assets
     char.updated_at = datetime.now()
     await db.flush()
 

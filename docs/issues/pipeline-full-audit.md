@@ -1,5 +1,7 @@
 # Pipeline 全流程排查报告
 
+> **归档说明（2026-06-17）**：本文档为历史排查记录。`simulatePipeline` 已移除，当前流程以 **[D-004 全流程规格书](../design/pipeline-full-flow-spec.md)** 为准。下列 P0 问题多数已修复，请勿按本文实施。
+
 **排查时间**: 2026-06-12 15:30:00
 **排查人**: Claude Code
 **影响范围**: Chat 页面 → Pipeline 面板完整流程

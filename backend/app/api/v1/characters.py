@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from app.models.schemas import (
     CharacterCreate, CharacterUpdate, CharacterResponse,
     CharacterAssetData, CharacterRelationshipData, MessageResponse,
 )
+from app.utils.character_fields import normalize_age
 
 router = APIRouter()
 
@@ -25,7 +26,7 @@ def _to_response(c: Character) -> CharacterResponse:
         name=c.name,
         role=c.role or "配角",
         gender=c.gender or "",
-        age=c.age or 0,
+        age=normalize_age(c.age),
         description=c.description or "",
         personality=c.personality or "",
         personality_traits=c.personality_traits or [],
@@ -35,7 +36,7 @@ def _to_response(c: Character) -> CharacterResponse:
         special_setting=c.special_setting or "",
         avatar_color=c.avatar_color or "#A8835F",
         avatar_url=c.avatar_url or "",
-        has_generated_image=bool(c.avatar_url),
+        has_generated_image=bool(c.has_generated_image or c.avatar_url),
         assets=[CharacterAssetData(**a) for a in (c.assets_json or [])],
         relationships=[CharacterRelationshipData(**r) for r in (c.relationships_json or [])],
         scenes=c.scenes_json or [],
@@ -132,3 +133,42 @@ async def delete_character(character_id: str, db: AsyncSession = Depends(get_db)
     await db.delete(char)
     await db.flush()
     return MessageResponse(message=f"角色 {character_id} 已删除")
+
+
+@router.post("/{character_id}/upload-avatar", response_model=CharacterResponse)
+async def upload_character_avatar(
+    character_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """上传角色头像图片。"""
+    from pathlib import Path as _Path
+
+    result = await db.execute(select(Character).where(Character.id == character_id))
+    char = result.scalar_one_or_none()
+    if not char:
+        raise HTTPException(status_code=404, detail="角色不存在")
+
+    # Validate file type
+    mime_type = file.content_type or ""
+    if not mime_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="只支持图片文件")
+
+    # Save file
+    upload_dir = _Path("uploads/avatars")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    ext = _Path(file.filename or "").suffix or ".png"
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = upload_dir / unique_name
+
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Update character avatar_url
+    char.avatar_url = f"/uploads/avatars/{unique_name}"
+    char.has_generated_image = True
+    char.updated_at = datetime.now()
+    await db.flush()
+
+    return _to_response(char)

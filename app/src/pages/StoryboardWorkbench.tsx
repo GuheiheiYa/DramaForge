@@ -1,14 +1,14 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Film, Play, Sparkles, Download } from 'lucide-react';
-import { Toaster } from 'sonner';
+import { ChevronLeft, ChevronRight, Film, Play, Sparkles, Download, Loader2 } from 'lucide-react';
 import TimelineStrip from './storyboard/TimelineStrip';
 import ShotList from './storyboard/ShotList';
 import FrameEditor from './storyboard/FrameEditor';
 import Toolbar from './storyboard/Toolbar';
-import { mockShots, getTotalDuration } from './storyboard/mockData';
+import { getTotalDuration } from './storyboard/mockData';
 import type { Shot, ShotFilter, ViewMode } from './storyboard/types';
+import { normalizeShotStatus, normalizeShotType } from './storyboard/types';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
 import ProjectSelector from '@/components/ProjectSelector';
@@ -18,6 +18,7 @@ import {
   updateShot as apiUpdateShot,
   deleteShot as apiDeleteShot,
   chatStream,
+  generateShotVideo,
   type ShotData,
 } from '@/lib/api';
 
@@ -26,9 +27,9 @@ function toFrontendShot(s: ShotData): Shot {
   return {
     id: s.id,
     shotNumber: s.shot_number,
-    shotType: s.shot_type as Shot['shotType'],
+    shotType: normalizeShotType(s.shot_type),
     duration: s.duration,
-    status: s.status as Shot['status'],
+    status: normalizeShotStatus(s.status),
     description: s.description,
     cameraMovement: s.camera_movement,
     composition: s.composition,
@@ -72,6 +73,7 @@ export default function StoryboardWorkbench() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
+  const [playDialogOpen, setPlayDialogOpen] = useState(false);
 
   // 从后端加载分镜数据（按项目过滤）
   useEffect(() => {
@@ -83,9 +85,8 @@ export default function StoryboardWorkbench() {
         setLoading(false);
       })
       .catch((err) => {
-        console.error('[StoryboardWorkbench] 加载失败，使用 mock 数据:', err);
-        setShots(mockShots);
-        if (mockShots.length > 0) setSelectedShotId(mockShots[0].id);
+        console.error('[StoryboardWorkbench] 加载失败:', err);
+        setShots([]);
         setLoading(false);
       });
   }, [selectedProjectId]);
@@ -173,15 +174,7 @@ export default function StoryboardWorkbench() {
       })
       .catch((err) => {
         console.error('[StoryboardWorkbench] 复制失败:', err);
-        // 乐观更新
-        setShots((prev) => {
-          const index = prev.findIndex((s) => s.id === shot.id);
-          const newShot: Shot = { ...shot, id: `dup_${Date.now()}`, shotNumber: shot.shotNumber + 1, status: '草稿' };
-          const newShots = [...prev];
-          newShots.splice(index + 1, 0, newShot);
-          return newShots.map((s, i) => ({ ...s, shotNumber: i + 1 }));
-        });
-        toastSuccess('分镜已复制');
+        toastInfo('复制分镜失败，请重试');
       });
   }, [selectedProjectId]);
 
@@ -297,46 +290,71 @@ export default function StoryboardWorkbench() {
     }
   }, [selectedProjectId, shots.length]);
 
-  const handleBatchGenerate = useCallback((ids: string[]) => {
+  const handleBatchGenerate = useCallback(async (ids: string[]) => {
     setGenerating(true);
     setGenerationProgress(0);
 
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setGenerationProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setGenerating(false);
-        setGenerationProgress(0);
-        // Update all selected shots to completed
-        setShots((prev) =>
-          prev.map((s) =>
-            ids.includes(s.id) ? { ...s, status: '已完成' as const } : s
-          )
-        );
-        toastSuccess(`已完成 ${ids.length} 个分镜的批量生成`);
-        setSelectedIds([]);
-        setBatchMode(false);
-      }
-    }, 300);
-  }, []);
+    let completed = 0;
+    const total = ids.length;
 
-  const handleBatchDelete = useCallback((ids: string[]) => {
-    setShots((prev) => {
-      const filtered = prev.filter((s) => !ids.includes(s.id));
-      return filtered.map((s, i) => ({ ...s, shotNumber: i + 1 }));
-    });
+    // 先将所有选中分镜状态设为「生成中」
+    setShots((prev) =>
+      prev.map((s) =>
+        ids.includes(s.id) ? { ...s, status: '生成中' as const } : s
+      )
+    );
+
+    for (const id of ids) {
+      try {
+        await generateShotVideo(id);
+        setShots((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, status: '已完成' as const } : s))
+        );
+      } catch (err) {
+        console.error('[StoryboardWorkbench] 生成失败:', err);
+        setShots((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, status: '失败' as const } : s))
+        );
+      }
+      completed++;
+      setGenerationProgress(Math.round((completed / total) * 100));
+    }
+
+    setGenerating(false);
+    setGenerationProgress(0);
+    const successCount = ids.length;
+    toastSuccess(`批量生成完成，共处理 ${successCount} 个分镜`);
     setSelectedIds([]);
     setBatchMode(false);
   }, []);
 
-  const handleRegenerateShot = useCallback((id: string) => {
+  const handleBatchDelete = useCallback(async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map((id) => apiDeleteShot(id)));
+      setShots((prev) => {
+        const filtered = prev.filter((s) => !ids.includes(s.id));
+        return filtered.map((s, i) => ({ ...s, shotNumber: i + 1 }));
+      });
+      setSelectedIds([]);
+      setBatchMode(false);
+      toastSuccess(`已删除 ${ids.length} 个分镜`);
+    } catch (err) {
+      console.error('[StoryboardWorkbench] 批量删除失败:', err);
+      toastInfo('批量删除失败');
+    }
+  }, []);
+
+  const handleRegenerateShot = useCallback(async (id: string) => {
     handleUpdateShot(id, { status: '生成中' });
-    setTimeout(() => {
+    try {
+      await generateShotVideo(id);
       handleUpdateShot(id, { status: '已完成' });
       toastSuccess('重新生成完成');
-    }, 3000);
+    } catch (err) {
+      console.error('[StoryboardWorkbench] 重新生成失败:', err);
+      handleUpdateShot(id, { status: '失败' });
+      toastInfo('重新生成失败，请重试');
+    }
   }, [handleUpdateShot]);
 
   const handleToggleBatchMode = useCallback(() => {
@@ -355,7 +373,6 @@ export default function StoryboardWorkbench() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <motion.div
         className="h-[calc(100dvh-52px)] flex flex-col bg-[#FBF7F4] overflow-hidden"
         initial={{ opacity: 0 }}
@@ -375,13 +392,13 @@ export default function StoryboardWorkbench() {
             </nav>
             <div className="flex items-center ml-2">
               <button
-                onClick={() => toastInfo('切换到上一集')}
+                onClick={() => toastInfo('请先在剧本编辑器中选择集数')}
                 className="w-6 h-6 rounded flex items-center justify-center hover:bg-[#F8F7F6] text-[#A8A39E] hover:text-[#524D48] transition-colors"
               >
                 <ChevronLeft size={14} />
               </button>
               <button
-                onClick={() => toastInfo('切换到下一集')}
+                onClick={() => toastInfo('请先在剧本编辑器中选择集数')}
                 className="w-6 h-6 rounded flex items-center justify-center hover:bg-[#F8F7F6] text-[#A8A39E] hover:text-[#524D48] transition-colors"
               >
                 <ChevronRight size={14} />
@@ -400,7 +417,7 @@ export default function StoryboardWorkbench() {
               AI 生成分镜
             </button>
             <button
-              onClick={() => toastSuccess('开始播放分镜预览...')}
+              onClick={() => setPlayDialogOpen(true)}
               className="h-7 px-3 border border-[#DEDBD8] hover:border-[#A8835F] rounded-lg text-[#524D48] hover:text-[#755235] text-[12px] flex items-center gap-1.5 transition-colors"
             >
               <Play size={13} />
@@ -421,7 +438,19 @@ export default function StoryboardWorkbench() {
               批量生成
             </button>
             <button
-              onClick={() => toastSuccess('正在导出分镜图...')}
+              onClick={() => {
+                const data = JSON.stringify(shots, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `storyboard_${selectedProjectId || 'export'}_${Date.now()}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                toastSuccess('分镜数据已导出为 JSON 文件');
+              }}
               className="h-7 px-3 border border-[#DEDBD8] hover:border-[#A8835F] rounded-lg text-[#524D48] hover:text-[#755235] text-[12px] flex items-center gap-1.5 transition-colors"
             >
               <Download size={13} />
@@ -496,6 +525,43 @@ export default function StoryboardWorkbench() {
           generating={generating}
           generationProgress={generationProgress}
         />
+
+        {/* Play dialog */}
+        {playDialogOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPlayDialogOpen(false)}>
+            <div className="bg-white rounded-xl shadow-xl w-[420px] max-h-[80vh] overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-[15px] font-semibold text-[#524D48] mb-3">播放分镜预览</h3>
+              {(() => {
+                const pendingShots = shots.filter(s => s.status !== '已完成');
+                if (pendingShots.length === 0) {
+                  return (
+                    <div className="text-[13px] text-[#8B847E] mb-4">
+                      所有分镜已生成完毕，但视频播放功能尚未实现。敬请期待后续版本！
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    <div className="text-[13px] text-[#8B847E] mb-3">
+                      以下分镜尚未完成生成，无法播放预览。请先生成所有分镜后再试：
+                    </div>
+                    <ul className="space-y-1 mb-4 max-h-[240px] overflow-auto">
+                      {pendingShots.map(s => (
+                        <li key={s.id} className="flex items-center justify-between text-[12px] px-3 py-1.5 rounded bg-[#F8F7F6]">
+                          <span className="text-[#524D48]">镜头 {s.shotNumber}：{s.description?.slice(0, 30) || '无描述'}</span>
+                          <span className={`text-[11px] px-1.5 py-0.5 rounded ${s.status === '生成中' ? 'bg-amber-100 text-amber-700' : s.status === '失败' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{s.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                );
+              })()}
+              <div className="flex justify-end">
+                <button onClick={() => setPlayDialogOpen(false)} className="h-7 px-4 bg-[#A8835F] hover:bg-[#8E6A48] rounded-lg text-white text-[12px] transition-colors">知道了</button>
+              </div>
+            </div>
+          </div>
+        )}
       </motion.div>
     </>
   );

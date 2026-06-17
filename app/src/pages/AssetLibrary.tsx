@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toastSuccess, toastInfo, toastError } from '@/hooks/useToast';
-import { Toaster } from 'sonner';
+import { API_ORIGIN } from '@/lib/config';
 import { useAppStore } from '@/store/useAppStore';
 import {
   getAssets,
@@ -208,6 +208,19 @@ export default function AssetLibrary() {
     }
   };
 
+  const handleDownload = (asset: Asset) => {
+    const url = asset.previewUrl.startsWith('http')
+      ? asset.previewUrl
+      : `${API_ORIGIN}${asset.previewUrl.startsWith('/') ? '' : '/'}${asset.previewUrl}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = asset.name;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
 
@@ -223,7 +236,6 @@ export default function AssetLibrary() {
 
   return (
     <>
-      <Toaster position="top-center" />
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -451,7 +463,7 @@ export default function AssetLibrary() {
                       <span className="w-24 text-center text-caption text-[#A8A39E]">{asset.createdAt}</span>
                       <div className="w-10 flex justify-center">
                         <button
-                          onClick={(e) => { e.stopPropagation(); toastInfo(`下载「${asset.name}」`); }}
+                          onClick={(e) => { e.stopPropagation(); handleDownload(asset); }}
                           className="w-7 h-7 rounded flex items-center justify-center text-[#A8A39E] hover:text-[#5A7FA8] hover:bg-[#F0F3F7] opacity-0 group-hover:opacity-100 transition-all"
                         >
                           <Download size={14} />
@@ -468,7 +480,7 @@ export default function AssetLibrary() {
                 <Image size={32} className="text-[#C4A07F]" />
               </div>
               <h3 className="text-h4 text-[#524D48] mb-2">没有找到素材</h3>
-              <p className="text-small text-[#A8A39E] mb-6">试试调整筛癣上传新素材</p>
+              <p className="text-small text-[#A8A39E] mb-6">试试调整筛选或上传新素材</p>
               <button onClick={handleUpload} className="h-9 px-4 rounded-lg bg-[#A8835F] text-small text-white hover:bg-[#8E6A48] transition-colors flex items-center gap-2">
                 <Upload size={14} /> 上传素材
               </button>
@@ -496,7 +508,7 @@ export default function AssetLibrary() {
             >
               <AssetPreview asset={previewAsset} />
               <div className="px-6 pb-6 flex gap-3">
-                <button onClick={() => { toastInfo(`下载「${previewAsset.name}」`); setPreviewAsset(null); }} className="flex-1 h-10 rounded-lg bg-[#A8835F] text-small font-medium text-white hover:bg-[#8E6A48] transition-colors flex items-center justify-center gap-2">
+                <button onClick={() => { handleDownload(previewAsset); setPreviewAsset(null); }} className="flex-1 h-10 rounded-lg bg-[#A8835F] text-small font-medium text-white hover:bg-[#8E6A48] transition-colors flex items-center justify-center gap-2">
                   <Download size={14} /> 下载
                 </button>
                 <button onClick={async () => {

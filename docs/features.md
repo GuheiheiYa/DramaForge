@@ -64,12 +64,13 @@
 
 ## [F-004] 分镜工作台 ← [R-004]
 
-**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 已完成  **实现时间**: 2026-06-09 00:00:00  **最后更新**: 2026-06-17 23:23:00
 
 **实现方式**:
 - 横向时间轴 + 分镜列表 + 帧编辑器三栏布局
 - 分镜 CRUD、批量生成、批量删除
 - 帧编辑器支持描述编辑、景别/运镜参数调整
+- `normalizeShotType` / `getShotTypeStyle` 兼容 Pipeline 写入的非标准景别，避免 UI 崩溃
 
 **关联文件**:
 - `src/pages/StoryboardWorkbench.tsx`
@@ -257,13 +258,14 @@
 
 ## [F-012] Chat Studio — 一站式创作指挥中心 ← [R-012]
 
-**状态**: 开发中  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-11 00:00:00
+**状态**: 开发中  **实现时间**: 2026-06-11 00:00:00  **最后更新**: 2026-06-17 23:23:00
 
 **实现方式**:
 - 在 AI 对话页面基础上扩展，新增可调节分屏布局
 - 右侧进度面板：步骤条 + 当前步骤轻量预览
-- Pipeline 状态管理（`usePipelineStore`）
+- Pipeline 状态管理（`usePipelineStore`）+ 全局 SSE（`PipelineLifecycle`）
 - 6 个步骤预览组件（ScriptPreview / CharacterPreview / StoryboardPreview / VideoPreview / AudioPreview / ComposePreview）
+- Chat 会话 localStorage 持久化（[R-056]）；Pipeline error_card 重试后自动 dismiss（[ISS-013]）
 - 消息排队机制、模式选择（全自动/每步确认/仅预览）
 - 完成卡片（查看成片/编辑剧本/调整分镜）
 

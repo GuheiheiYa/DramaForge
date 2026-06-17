@@ -37,6 +37,10 @@ class Project(Base):
     scripts = relationship("Script", back_populates="project", cascade="all, delete-orphan")
     characters = relationship("Character", back_populates="project", cascade="all, delete-orphan")
     shots = relationship("StoryboardShot", back_populates="project", cascade="all, delete-orphan")
+    generation_tasks = relationship("GenerationTask", back_populates="project", cascade="all, delete-orphan")
+    assets = relationship("Asset", back_populates="project", cascade="all, delete-orphan")
+    cost_records = relationship("CostRecord", back_populates="project", cascade="all, delete-orphan")
+    pipeline_runs = relationship("PipelineRun", back_populates="project", cascade="all, delete-orphan")
 
 
 class Script(Base):
@@ -222,6 +226,7 @@ class TimelineClip(Base):
     status = Column(String(20), default="ready", comment="状态: ready/generating/error")
     shot_ref = Column(String(50), default="", comment="关联分镜引用")
     color = Column(String(20), default="", comment="显示颜色 HEX")
+    media_url = Column(String(500), default="", comment="媒体文件 URL")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -243,7 +248,7 @@ class GenerationTask(Base):
     """生成任务表 — 记录所有生成任务的执行历史。"""
     __tablename__ = "generation_tasks"
 
-    id = Column(String(32), primary_key=True, default=lambda: gen_uuid())
+    id = Column(String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     stage = Column(String(50), nullable=False, comment="任务阶段: script/character/storyboard/video/audio/compose")
     skill_id = Column(String(50), default="", comment="使用的 SKILL ID")
@@ -257,7 +262,7 @@ class GenerationTask(Base):
     completed_at = Column(DateTime, default=None, comment="完成时间")
 
     # 关联
-    project = relationship("Project", backref="generation_tasks")
+    project = relationship("Project", back_populates="generation_tasks")
 
 
 class Asset(Base):
@@ -279,7 +284,7 @@ class Asset(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 
     # 关联
-    project = relationship("Project", backref="assets")
+    project = relationship("Project", back_populates="assets")
 
 
 class CostRecord(Base):
@@ -297,7 +302,28 @@ class CostRecord(Base):
     created_at = Column(DateTime, default=datetime.now, comment="创建时间")
 
     # 关联
-    project = relationship("Project", backref="cost_records")
+    project = relationship("Project", back_populates="cost_records")
+
+
+class PipelineRun(Base):
+    """Pipeline 执行记录 — 持久化 Chat Studio 编排状态。"""
+    __tablename__ = "pipeline_runs"
+
+    id = Column(String(32), primary_key=True, default=lambda: gen_uuid("pipe_"))
+    project_id = Column(String(32), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    mode = Column(String(20), default="auto", comment="执行模式: auto/confirm/preview")
+    status = Column(String(20), default="running", comment="running/paused/completed/failed")
+    current_step = Column(Integer, default=0, comment="当前步骤 0-5")
+    creative_input = Column(Text, default="", comment="用户创意输入")
+    structured_data = Column(JSON, default=dict, comment="Chat 预提取的结构化数据")
+    skill_id = Column(String(50), default="jp-school", comment="SKILL ID")
+    steps_json = Column(JSON, default=list, comment="步骤快照")
+    error_json = Column(JSON, default=None, comment="错误信息")
+    waiting_confirmation = Column(Boolean, default=False, comment="confirm 模式等待用户确认")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    project = relationship("Project", back_populates="pipeline_runs")
 
 
 class Notification(Base):

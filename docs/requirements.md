@@ -1,18 +1,36 @@
 # 需求文档
 
-**最后更新**: 2026-06-15 12:15:00
+**最后更新**: 2026-06-17 23:23:00  
+**全流程规格**: [D-004 pipeline-full-flow-spec.md](design/pipeline-full-flow-spec.md)
 
 ---
 
 ## 两条创建路线
 
 ### 路线 A：Agent 驱动（Chat 页面）
+
+**阶段 A — Chat 创作前置**（不写业务表，除新建项目）
+
 ```
-用户输入创意 → AI 生成剧本 → 自动创建项目 → 自动填充剧本/角色/分镜
-→ 用户跳转各页面微调 → AI 辅助修改 → 最终合成
+用户输入创意（含创作关键词）
+  → 流式生成 Markdown 创作方案
+  → PlanConfirmCard 确认
+  → ModeSelectorCard 选择 auto / confirm / preview
+  → 绑定或创建项目（projects）
+  → POST /pipeline/start
+```
+
+**阶段 B — Pipeline 六步编排**
+
+```
+Step 0 剧本 → Step 1 角色 → Step 2 分镜 → Step 3 视频 → Step 4 配音(占位) → Step 5 合成(占位)
+  → 每步写入 DB + SSE 推送
+  → ScriptEditor / CharacterManager / StoryboardWorkbench / Composer 读取
+  → 用户跳转各页面微调
 ```
 
 ### 路线 B：手动创建（Dashboard）
+
 ```
 用户创建项目 → 跳转剧本编辑器 → 手动/AI 写剧本
 → 跳转角色管理 → 手动/AI 设计角色
@@ -22,17 +40,19 @@
 
 ---
 
-## 完整步骤流程（7 步）
+## 完整步骤流程（7 步 + Pipeline 映射）
 
-| 步骤 | 名称 | 涉及表 | 涉及页面 | AI 入口 |
-|------|------|--------|---------|---------|
-| ① | 项目创建 | projects | Dashboard、Chat | Chat 自动创建 |
-| ② | 剧本创作 | scripts→episodes→scenes→script_blocks | ScriptEditor、Chat | AIScriptPanel + Chat |
-| ③ | 角色设计 | characters | CharacterManager、Chat | AI 生成角色 + Chat |
-| ④ | 分镜制作 | storyboard_shots | StoryboardWorkbench、Chat | AI 生成分镜 + Chat |
-| ⑤ | 视频生成 | timeline_clips | ComposerStudio | 需要即梦AI API |
-| ⑥ | 配音生成 | timeline_clips(audio) | ComposerStudio | 需要 TTS API |
-| ⑦ | 合成导出 | timeline_clips + subtitle_segments | ComposerStudio | 需要合成服务 |
+| 步骤 | 名称 | Pipeline Step | 涉及表 | 涉及页面 | 状态 |
+|------|------|---------------|--------|---------|------|
+| ① | 项目创建 | 启动前 A5 | projects, pipeline_runs | Dashboard、Chat | 已实现 |
+| ② | 剧本创作 | 0 script | scripts→episodes→scenes→script_blocks | ScriptEditor、Chat | 已实现 |
+| ③ | 角色设计 | 1 character | characters | CharacterManager、Chat | 已实现 |
+| ④ | 分镜制作 | 2 storyboard | storyboard_shots | StoryboardWorkbench、Chat | 已实现 |
+| ⑤ | 视频生成 | 3 video | generation_tasks, timeline_clips | ComposerStudio、Chat | 已实现 |
+| ⑥ | 配音生成 | 4 audio | （占位，未落库） | ComposerStudio | **占位** TTS |
+| ⑦ | 合成导出 | 5 compose | pipeline_runs.status | ComposerStudio | **占位** FFmpeg |
+
+**编排状态表**: `pipeline_runs`（steps_json、current_step、mode、waiting_confirmation）
 
 ---
 
@@ -143,7 +163,13 @@
 | R-052 | 前端 Pipeline 真实 API 调用（替代 simulatePipeline） | P0 | ✅ | [D-003] | simulatePipeline 改为 async，步骤 1-3 保存数据库，步骤 4 调 Agnes 视频 API |
 | R-053 | 后端 Pipeline 异步执行 + SSE 进度推送 | P0 | 🔄 | [D-003] | 前端已真实调用 API，后端 SSE 推送待后续实现 |
 | R-054 | 三种执行模式区分（auto/confirm/preview） | P0 | ⏳ | [D-003] | auto 全自动，confirm 每步暂停等确认，preview 只提取不生成 |
-| R-055 | Pipeline 失败重试 + 跳过机制 | P1 | ⏳ | [D-003] | 某步失败可重试或跳过，不影响已完成步骤 |
+| R-055 | Pipeline 失败重试 + 跳过机制 | P1 | 🔄 | [D-003] | error_card 重试/跳过已修复；单镜失败仍暂停 Pipeline |
+
+### Chat 与会话 [R-056]
+
+| ID | 需求描述 | 优先级 | 状态 | 关联 | 备注 |
+|----|---------|--------|------|------|------|
+| R-056 | Chat 会话列表与消息历史 localStorage 持久化 | P0 | ✅ | [F-012] | 刷新/重进页面保留会话；流式中状态不持久化 |
 
 ---
 

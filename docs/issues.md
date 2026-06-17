@@ -59,6 +59,33 @@
 
 ## Closed（已解决）
 
+### [ISS-015] Chat 会话刷新后丢失（无持久化）
+- **关联需求**: [R-056], [R-012]
+- **关联功能**: [F-012] Chat Studio
+- **问题描述**: `useChatStore.sessions` 仅存内存，刷新页面后会话列表与消息历史全部丢失
+- **解决方案**: 使用 zustand `persist` 将会话列表、当前会话 ID、模型/SKILL 选择写入 `localStorage`（`dramaforge-chat-store`）
+- **状态**: closed
+- **记录时间**: 2026-06-17 23:20:00
+- **关闭时间**: 2026-06-17 23:23:00
+
+### [ISS-014] 分镜工作台进入崩溃 `Cannot read properties of undefined (reading 'bg')`
+- **关联需求**: [R-004], [R-036]
+- **关联功能**: [F-004] 分镜工作台
+- **问题描述**: Pipeline 写入的 `shot_type` 可能为英文或非枚举值（如 `medium shot`），`SHOT_TYPE_STYLES[shot.shotType]` 为 `undefined`，访问 `.bg` 导致页面白屏
+- **解决方案**: 新增 `normalizeShotType` / `getShotTypeStyle` / `normalizeShotStatus`；StoryboardWorkbench 加载失败不再回退 mock
+- **状态**: closed
+- **记录时间**: 2026-06-17 23:20:00
+- **关闭时间**: 2026-06-17 23:23:00
+
+### [ISS-013] Pipeline 视频步 error_card 点击重试后气泡不消失
+- **关联需求**: [R-055], [R-012]
+- **关联功能**: [F-012] Chat Studio
+- **问题描述**: `error_card` 消息无 `resolved` 标记，重试后旧错误气泡仍显示
+- **解决方案**: 新增 `resolvePipelineErrorMessage()`，在 `retryFailedStep` / `skipFailedStep` 时标记对应 step 的 error_card 为已解决
+- **状态**: closed
+- **记录时间**: 2026-06-17 23:20:00
+- **关闭时间**: 2026-06-17 23:23:00
+
 ### [ISS-011] 后端 4 个路由 await 运算符优先级 Bug 导致 500 + CORS 失败
 - **关联需求**: [R-010], [R-009], [R-008]
 - **关联功能**: [F-010], [F-009], [F-008]

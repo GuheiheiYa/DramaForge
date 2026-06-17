@@ -33,6 +33,8 @@ interface PlaybackControlsProps {
   onSplit: () => void;
   undoStack?: number;
   redoStack?: number;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export default function PlaybackControls({
@@ -50,6 +52,8 @@ export default function PlaybackControls({
   onSplit,
   undoStack = 0,
   redoStack = 0,
+  onUndo,
+  onRedo,
 }: PlaybackControlsProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [seekHover, setSeekHover] = useState(false);
@@ -94,7 +98,7 @@ export default function PlaybackControls({
       {/* Left: edit actions */}
       <div className="flex items-center gap-1">
         <button
-          onClick={() => canUndo ? toastInfo('撤销') : null}
+          onClick={() => canUndo && onUndo?.()}
           className={cn(
             'w-7 h-7 rounded flex items-center justify-center transition-colors',
             canUndo ? 'hover:bg-[#F8F7F6] text-[#524D48]' : 'text-[#C5C1BC] cursor-not-allowed'
@@ -104,7 +108,7 @@ export default function PlaybackControls({
           <Undo2 size={14} />
         </button>
         <button
-          onClick={() => canRedo ? toastInfo('重做') : null}
+          onClick={() => canRedo && onRedo?.()}
           className={cn(
             'w-7 h-7 rounded flex items-center justify-center transition-colors',
             canRedo ? 'hover:bg-[#F8F7F6] text-[#524D48]' : 'text-[#C5C1BC] cursor-not-allowed'

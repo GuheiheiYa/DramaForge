@@ -15,7 +15,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAppStore, type ProjectType, type Project } from '@/store/useAppStore';
-import { getProjects as apiGetProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject } from '@/lib/api';
+import { getProjects as apiGetProjects, createProject as apiCreateProject, deleteProject as apiDeleteProject, updateProject as apiUpdateProject } from '@/lib/api';
+import { dismissPipelineForProject } from '@/lib/pipeline-stream';
 import ProjectCard from '@/components/ProjectCard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { toast } from '@/hooks/useToast';
@@ -73,6 +74,7 @@ function EmptyState({ onClearFilters, onCreate }: { onClearFilters: () => void; 
 /* ─── New Project Modal (3-step wizard) ─── */
 function NewProjectModal({ onClose }: { onClose: () => void }) {
   const addProject = useAppStore((s) => s.addProject);
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
@@ -122,15 +124,17 @@ function NewProjectModal({ onClose }: { onClose: () => void }) {
         type,
         description: description.trim() || undefined,
         episodes,
+        skill_id: selectedSkill,
+        skill_name: skills.find((s) => s.id === selectedSkill)?.name || '',
       });
       const newProject: Project = {
         id: created.id,
         name: created.name,
         type: (created.type as ProjectType) || type,
-        status: '草稿',
-        progress: 0,
-        currentEpisode: 1,
-        totalEpisodes: created.total_episodes || episodes,
+        status: (created.status as Project['status']) || '草稿',
+        progress: created.progress ?? 0,
+        currentEpisode: created.current_episode ?? 1,
+        totalEpisodes: created.episodes || episodes,
         lastEdited: '刚刚',
         thumbnail: type === '漫剧' ? '/project-placeholder-1.jpg' : '/project-placeholder-2.jpg',
         skillName: skills.find((s) => s.id === selectedSkill)?.name,
@@ -532,18 +536,19 @@ export default function Dashboard() {
         const data = await apiGetProjects();
         if (cancelled) return;
         // 清空 store 中的 mock 数据，替换为 API 数据
-        const apiProjects: Project[] = data.map((p: Record<string, unknown>) => ({
-          id: p.id as string,
-          name: p.name as string,
+        const apiProjects: Project[] = data.map((p) => ({
+          id: p.id,
+          name: p.name,
           type: ((p.type as string) || '漫剧') as ProjectType,
-          status: '草稿',
-          progress: 0,
-          currentEpisode: 1,
-          totalEpisodes: (p.episodes as number) || 8,
+          status: (p.status as Project['status']) || '草稿',
+          progress: p.progress ?? 0,
+          currentEpisode: p.current_episode ?? 1,
+          totalEpisodes: p.episodes || 8,
           lastEdited: p.updated_at
-            ? new Date(p.updated_at as string).toLocaleDateString('zh-CN')
+            ? new Date(p.updated_at).toLocaleDateString('zh-CN')
             : '未知',
-          thumbnail: (p.type as string) === '短剧' ? '/project-placeholder-2.jpg' : '/project-placeholder-1.jpg',
+          thumbnail: p.type === '短剧' ? '/project-placeholder-2.jpg' : '/project-placeholder-1.jpg',
+          skillName: p.skill_name || undefined,
         }));
         // 批量替换 store 中的 projects
         useAppStore.setState({ projects: apiProjects });
@@ -650,6 +655,7 @@ export default function Dashboard() {
     if (confirmProjectId) {
       try {
         await apiDeleteProject(confirmProjectId);
+        dismissPipelineForProject(confirmProjectId);
         removeProject(confirmProjectId);
         toast.success('项目已删除');
       } catch {
@@ -665,9 +671,20 @@ export default function Dashboard() {
     setRenameValue(project.name);
   }, []);
 
-  const submitRename = useCallback(() => {
+  const submitRename = useCallback(async () => {
     if (renamingId && renameValue.trim()) {
-      toast.success('项目名称已更新');
+      const newName = renameValue.trim();
+      try {
+        await apiUpdateProject(renamingId, { name: newName });
+        useAppStore.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === renamingId ? { ...p, name: newName } : p
+          ),
+        }));
+        toast.success('项目名称已更新');
+      } catch {
+        toast.error('更新项目名称失败');
+      }
     }
     setRenamingId(null);
     setRenameValue('');
@@ -677,6 +694,11 @@ export default function Dashboard() {
     setFilterTab('全部');
     setSearchQuery('');
   }, []);
+
+  const handleContinueCreate = useCallback((project: Project) => {
+    setSelectedProject(project.id);
+    navigate(`/chat?projectId=${encodeURIComponent(project.id)}`);
+  }, [navigate, setSelectedProject]);
 
   const tabs: FilterTab[] = ['全部', '漫剧', '短剧', '草稿', '进行中'];
 
@@ -832,6 +854,7 @@ export default function Dashboard() {
                       setSelectedProject(project.id);
                       navigate('/script');
                     }}
+                    onContinueCreate={() => handleContinueCreate(project)}
                     onDelete={() => handleDeleteProject(project.id, project.name)}
                     onRename={() => handleRename(project)}
                     onDuplicate={() => toast.success(`已复制项目「${project.name}」`)}
@@ -868,6 +891,7 @@ export default function Dashboard() {
                       setSelectedProject(project.id);
                       navigate('/script');
                     }}
+                    onContinueCreate={() => handleContinueCreate(project)}
                     onDelete={() => handleDeleteProject(project.id, project.name)}
                     onRename={() => handleRename(project)}
                     onDuplicate={() => toast.success(`已复制项目「${project.name}」`)}

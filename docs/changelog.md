@@ -1,6 +1,70 @@
 # 更新日志
 
-## 2026-06-17 09:40:00 — Chat 两次 LLM 调用：数据生成 + 用户回复分离
+## 2026-06-17 23:23:00 — 视频审核容错 + 分镜崩溃修复 + 会话持久化
+
+**需求**: [R-055], [R-056], [R-004]  
+**问题**: [ISS-013], [ISS-014], [ISS-015]（均已关闭）  
+**设计**: [D-004 pipeline-full-flow-spec.md](design/pipeline-full-flow-spec.md) Step 3 补充内容审核说明
+
+**修改文件**:
+- `backend/app/utils/video_prompt.py` — `sanitize_video_prompt`、内容审核错误识别；prompt 默认加 family-friendly 约束
+- `backend/app/services/video_service.py` — `generate_video_with_policy_retry` 审核拦截后自动弱化 prompt 重试
+- `backend/app/services/pipeline_executor.py` — 视频步使用 policy retry；审核失败友好错误文案
+- `backend/app/services/image_service.py` — 角色批量立绘统一画风（style anchor + 图生图）
+- `app/src/store/useChatStore.ts` — zustand persist 会话持久化；`resolvePipelineErrorMessage`
+- `app/src/hooks/usePipelineExecution.ts` — 重试/跳过时清除 error_card 气泡
+- `app/src/pages/storyboard/types.ts` — `normalizeShotType` / `getShotTypeStyle` 防止 `.bg` 崩溃
+- `app/src/pages/StoryboardWorkbench.tsx` — 规范化后端景别/状态；加载失败不再 mock
+
+**变更摘要**:
+- Agnes 返回 `content_policy_violation`（如镜头 2）时自动弱化 prompt 重试一次，仍失败则提示调整分镜描述
+- 修复分镜工作台 Pipeline 数据景别非中文枚举导致的白屏
+- Chat 会话写入 localStorage，刷新后保留历史
+- Pipeline 错误气泡重试后立即消失
+
+---
+
+## 2026-06-17 — 全流程规格书 D-004 + 文档体系同步
+
+**新增**:
+- [D-004 pipeline-full-flow-spec.md](design/pipeline-full-flow-spec.md) — Chat 创作前置 + Pipeline 六步完整规格（节点职责、落库表、SSE、验收、待办）
+
+**更新**:
+- [data-model.md](data-model.md) — 补充 pipeline_runs、generation_tasks、cost_records、assets；Pipeline 步骤→表映射
+- [pipeline-overhaul-design.md](design/pipeline-overhaul-design.md) — v2.0 摘要，指向 D-004
+- [chat-studio-design.md](design/chat-studio-design.md) — 单次流式方案确认、PipelineLifecycle、ProgressPanel
+- [design.md](design.md) — 技术栈与文档索引
+- [requirements.md](requirements.md) — 路线 A/B 与 Pipeline Step 映射
+- [pipeline-e2e-checklist.md](testing/pipeline-e2e-checklist.md) — 按新流程重写
+
+**归档标注**:
+- [pipeline-full-audit.md](issues/pipeline-full-audit.md)、[pipeline-real-execution-design.md](design/pipeline-real-execution-design.md)
+
+---
+
+## 2026-06-17 — 全流程改造：后端 Pipeline 编排 + 数据流贯通
+
+**设计**: [pipeline-overhaul-design.md](design/pipeline-overhaul-design.md), [ai-display-spec.md](design/ai-display-spec.md)
+
+**变更摘要**:
+- 新增 `pipeline_runs` 表与 `pipeline_executor.py` 异步 6 步编排
+- `POST /pipeline/start` + `GET /pipeline/{id}/stream` SSE 实时推送
+- 前端移除 `simulatePipeline`，改用 `usePipelineExecution` Hook
+- 新增 AI 消息类型：progress_update / step_complete / error_card / pipeline_complete
+- ScriptEditor 支持 createScript；useChatStore 保存 extractedStoryboard
+- Composer 从 timeline API 加载；ProgressPanel 挂载到 Layout
+- 步骤 5-6 占位（TTS/FFmpeg 开发中）
+
+**修改文件**:
+- `backend/app/services/pipeline_executor.py` (新)
+- `backend/app/api/v1/pipeline.py`, `timeline.py`
+- `app/src/hooks/usePipelineExecution.ts` (新)
+- `app/src/pages/Chat.tsx`, `ScriptEditor.tsx`, `ComposerStudio.tsx`
+- `app/src/store/useChatStore.ts`, `usePipelineStore.ts`
+- `app/src/components/ProgressPanel.tsx`, `Layout.tsx`
+
+---
+
 
 **需求**: [R-051], [R-012]
 **设计**: 方案 A（前端两次 fetch）

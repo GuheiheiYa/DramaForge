@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Download, Monitor, Clock, Type, Music, Wand2 } from 'lucide-react';
-import { Toaster } from 'sonner';
 import MultiTrackTimeline from './composer/MultiTrackTimeline';
 import SubtitleEditor from './composer/SubtitleEditor';
 import PlaybackControls from './composer/PlaybackControls';
@@ -14,16 +13,91 @@ import {
   mockBgmClips,
   mockSubtitleSegments,
   defaultSubtitleStyle,
-  getTotalTimelineDuration,
   formatTime,
 } from './composer/mockData';
 import type { PanelTab, SubtitleStyle, SubtitleSegment, TimelineClip } from './composer/types';
 import { PANEL_TABS } from './composer/types';
 import { cn } from '@/lib/utils';
 import { toastSuccess, toastInfo } from '@/hooks/useToast';
+import { usePipelineStore } from '@/store/usePipelineStore';
+import { useAppStore } from '@/store/useAppStore';
+import { getTimelineClips, createTimelineClip } from '@/lib/api';
+import type { VideoData, AudioData, ComposeData } from '@/store/usePipelineStore';
 
 export default function ComposerStudio() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const selectedProjectId = useAppStore((s) => s.selectedProjectId);
+  const projectId = searchParams.get('projectId') || selectedProjectId || '';
+  const pipelineSteps = usePipelineStore((s) => s.steps);
+  const pipelineProjectTitle = usePipelineStore((s) => s.projectTitle);
+
+  // Extract pipeline data
+  const videoData = pipelineSteps.find((s) => s.id === 'video')?.data as VideoData | null;
+  const audioData = pipelineSteps.find((s) => s.id === 'audio')?.data as AudioData | null;
+  const composeData = pipelineSteps.find((s) => s.id === 'compose')?.data as ComposeData | null;
+
+  // Convert pipeline video clips to TimelineClip[], fallback to mock
+  const pipelineVideoClips: TimelineClip[] = useMemo(() => {
+    if (!videoData?.clips?.length) return [];
+    let offset = 0;
+    return videoData.clips.map((vc) => {
+      const clip: TimelineClip = {
+        id: vc.id,
+        name: vc.name,
+        trackType: 'video',
+        startTime: offset,
+        duration: vc.duration,
+        status: vc.status === 'done' ? 'ready' : vc.status === 'failed' ? 'error' : 'generating',
+        shotRef: vc.name,
+        color: '#E8F0E8',
+        volume: 100,
+        videoUrl: (vc as { videoUrl?: string }).videoUrl,
+      };
+      offset += vc.duration;
+      return clip;
+    });
+  }, [videoData]);
+
+  // Convert pipeline audio data to TimelineClip[], fallback to mock
+  const pipelineAudioClips: TimelineClip[] = useMemo(() => {
+    if (!audioData?.voices?.length) return [];
+    let offset = 0;
+    return audioData.voices.map((v, i) => {
+      const clip: TimelineClip = {
+        id: `pipe_audio_${i}`,
+        name: v.characterName,
+        trackType: 'audio',
+        startTime: offset,
+        duration: 5,
+        color: '#E8EFF6',
+        volume: 100,
+      };
+      offset += 5;
+      return clip;
+    });
+  }, [audioData]);
+
+  // Convert pipeline BGM data to TimelineClip[], fallback to mock
+  const pipelineBgmClips: TimelineClip[] = useMemo(() => {
+    if (!audioData?.bgm) return [];
+    return [{
+      id: 'pipe_bgm_1',
+      name: `BGM - ${audioData.bgm.style}`,
+      trackType: 'bgm',
+      startTime: 0,
+      duration: audioData.bgm.duration,
+      color: '#F5EDE6',
+      volume: 100,
+    }];
+  }, [audioData]);
+
+  // Use pipeline/API data when available; mock only for demo without project
+  const useDemoMock = !projectId;
+  const initialVideoClips = pipelineVideoClips.length > 0 ? pipelineVideoClips : (useDemoMock ? mockVideoClips : []);
+  const initialAudioClips = pipelineAudioClips.length > 0 ? pipelineAudioClips : (useDemoMock ? mockAudioClips : []);
+  const initialBgmClips = pipelineBgmClips.length > 0 ? pipelineBgmClips : (useDemoMock ? mockBgmClips : []);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(70);
@@ -34,14 +108,123 @@ export default function ComposerStudio() {
   const [hoverPreview, setHoverPreview] = useState(false);
   const [previewResolution, setPreviewResolution] = useState('720p');
   const [subtitleSegments, setSubtitleSegments] = useState<SubtitleSegment[]>(mockSubtitleSegments);
-  const [videoClips, setVideoClips] = useState<TimelineClip[]>(mockVideoClips);
-  const [audioClips] = useState<TimelineClip[]>(mockAudioClips);
-  const [bgmClips] = useState<TimelineClip[]>(mockBgmClips);
-  const [undoStack] = useState(0);
-  const [redoStack] = useState(0);
+  const [videoClips, setVideoClips] = useState<TimelineClip[]>(initialVideoClips);
+  const [audioClips, setAudioClips] = useState<TimelineClip[]>(initialAudioClips);
+  const [bgmClips, setBgmClips] = useState<TimelineClip[]>(initialBgmClips);
 
-  const totalDuration = getTotalTimelineDuration();
+  useEffect(() => {
+    if (!projectId) return;
+    getTimelineClips(projectId)
+      .then((clips) => {
+        if (clips.length === 0) return;
+        const videos: TimelineClip[] = [];
+        const audios: TimelineClip[] = [];
+        const bgms: TimelineClip[] = [];
+        for (const c of clips) {
+          const item: TimelineClip = {
+            id: c.id,
+            name: c.name,
+            trackType: c.track_type as TimelineClip['trackType'],
+            startTime: c.start_time,
+            duration: c.duration,
+            status: c.status === 'ready' ? 'ready' : c.status === 'error' ? 'error' : 'generating',
+            shotRef: c.shot_ref,
+            color: c.color || '#E8F0E8',
+            volume: 100,
+            videoUrl: c.media_url || undefined,
+          };
+          if (c.track_type === 'video') videos.push(item);
+          else if (c.track_type === 'audio') audios.push(item);
+          else if (c.track_type === 'bgm') bgms.push(item);
+        }
+        if (videos.length) setVideoClips(videos);
+        if (audios.length) setAudioClips(audios);
+        if (bgms.length) setBgmClips(bgms);
+      })
+      .catch((err) => console.warn('[Composer] 加载时间轴失败:', err));
+  }, [projectId]);
+
+  const handleImportMedia = useCallback(async () => {
+    if (!projectId) {
+      toastInfo('请先选择项目');
+      return;
+    }
+    const url = window.prompt('请输入视频或音频 URL（支持 http/https）');
+    if (!url?.trim()) return;
+    const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(url) || url.includes('video');
+    const trackType = isVideo ? 'video' : 'audio';
+    const lastEnd = videoClips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
+    try {
+      const created = await createTimelineClip({
+        project_id: projectId,
+        name: trackType === 'video' ? `导入视频 ${videoClips.length + 1}` : `导入音频 ${audioClips.length + 1}`,
+        track_type: trackType,
+        start_time: lastEnd,
+        duration: 5,
+        media_url: url.trim(),
+      });
+      const clip: TimelineClip = {
+        id: created.id,
+        name: created.name,
+        trackType: created.track_type as TimelineClip['trackType'],
+        startTime: created.start_time,
+        duration: created.duration,
+        status: 'ready',
+        color: trackType === 'video' ? '#E8F0E8' : '#E8EFF6',
+        volume: 100,
+        videoUrl: created.media_url || url.trim(),
+      };
+      if (trackType === 'video') setVideoClips((prev) => [...prev, clip]);
+      else setAudioClips((prev) => [...prev, clip]);
+      toastSuccess('素材已导入时间线');
+    } catch (err) {
+      console.error(err);
+      toastInfo('导入失败');
+    }
+  }, [projectId, videoClips, audioClips.length]);
+
+  // Undo/redo stacks: store snapshots of videoClips
+  const [undoStack, setUndoStack] = useState<TimelineClip[][]>([]);
+  const [redoStack, setRedoStack] = useState<TimelineClip[][]>([]);
+
+  // Push current state to undo stack before a change
+  const pushUndo = useCallback(() => {
+    setUndoStack((prev) => [...prev.slice(-19), videoClips]);
+    setRedoStack([]); // clear redo on new action
+  }, [videoClips]);
+
+  const handleUndo = useCallback(() => {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setRedoStack((r) => [...r, videoClips]);
+      setVideoClips(last);
+      return prev.slice(0, -1);
+    });
+  }, [videoClips]);
+
+  const handleRedo = useCallback(() => {
+    setRedoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setUndoStack((u) => [...u, videoClips]);
+      setVideoClips(last);
+      return prev.slice(0, -1);
+    });
+  }, [videoClips]);
+
+  // Compute total duration from all clips
+  const totalDuration = useMemo(() => {
+    const allClips = [...videoClips, ...audioClips, ...bgmClips];
+    if (allClips.length === 0) return 36;
+    return Math.max(...allClips.map((c) => c.startTime + c.duration), 1);
+  }, [videoClips, audioClips, bgmClips]);
+
+  // Compose video URL from pipeline
+  const composeVideoUrl = composeData?.videoUrl ?? null;
+
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Convert subtitle segments to timeline clips for the track
   const subtitleClips = subtitleSegments.map((sub) => ({
@@ -77,10 +260,11 @@ export default function ComposerStudio() {
   }, [isPlaying, totalDuration]);
 
   const handleDeleteClip = useCallback((id: string) => {
+    pushUndo();
     setVideoClips((prev) => prev.filter((c) => c.id !== id));
     setSelectedClipId((prev) => prev === id ? null : prev);
     toastSuccess('片段已删除');
-  }, []);
+  }, [pushUndo]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -131,27 +315,51 @@ export default function ComposerStudio() {
   const handleSkipBackward = useCallback(() => setCurrentTime((t) => Math.max(0, t - 5)), []);
   const handleSkipForward = useCallback(() => setCurrentTime((t) => Math.min(totalDuration, t + 5)), [totalDuration]);
 
-  const handleCopyClip = useCallback(() => {
-    toastInfo('片段已复制到剪贴板');
-  }, []);
+  const handleCopyClip = useCallback((id: string) => {
+    pushUndo();
+    setVideoClips((prev) => {
+      const clip = prev.find((c) => c.id === id);
+      if (!clip) return prev;
+      const newId = `${id}_copy_${Date.now()}`;
+      const newClip: TimelineClip = {
+        ...clip,
+        id: newId,
+        name: `${clip.name} 副本`,
+        startTime: clip.startTime + clip.duration,
+      };
+      return [...prev, newClip];
+    });
+    toastSuccess('片段已复制');
+  }, [pushUndo]);
 
   const handleSplitClip = useCallback((id: string, splitTime: number) => {
+    pushUndo();
     setVideoClips((prev) => {
       const clip = prev.find((c) => c.id === id);
       if (!clip) return prev;
       const idx = prev.findIndex((c) => c.id === id);
       const firstPart = { ...clip, duration: splitTime - clip.startTime };
-      const secondPart = { ...clip, id: `${id}_split`, startTime: splitTime, duration: clip.duration - (splitTime - clip.startTime) };
+      const secondPart = { ...clip, id: `${id}_split_${Date.now()}`, startTime: splitTime, duration: clip.duration - (splitTime - clip.startTime) };
       const newClips = [...prev];
       newClips.splice(idx, 1, firstPart, secondPart);
       return newClips;
     });
     toastSuccess('片段已分割');
-  }, []);
+  }, [pushUndo]);
 
-  const handleMuteClip = useCallback(() => {
-    toastInfo('片段已静音');
-  }, []);
+  const handleMuteClip = useCallback((id: string) => {
+    pushUndo();
+    setVideoClips((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        const currentVol = c.volume ?? 100;
+        return { ...c, volume: currentVol === 0 ? 100 : 0 };
+      })
+    );
+    const clip = videoClips.find((c) => c.id === id);
+    const isMuted = (clip?.volume ?? 100) === 0;
+    toastInfo(isMuted ? '片段已取消静音' : '片段已静音');
+  }, [pushUndo, videoClips]);
 
   const handleSplitAtPlayhead = useCallback(() => {
     const clipAtPlayhead = videoClips.find(
@@ -201,7 +409,6 @@ export default function ComposerStudio() {
 
   return (
     <>
-      <Toaster position="top-center" richColors />
       <motion.div
         className="h-[calc(100dvh-52px)] flex flex-col bg-[#0A0A0A] overflow-hidden"
         initial={{ opacity: 0 }}
@@ -233,6 +440,13 @@ export default function ComposerStudio() {
               </select>
             </div>
             <button
+              onClick={handleImportMedia}
+              className="h-8 px-3 border border-[#DEDBD8] text-[#524D48] text-[12px] font-medium rounded-lg flex items-center gap-1.5 transition-colors hover:bg-[#F8F7F6]"
+            >
+              <Wand2 size={13} />
+              导入素材
+            </button>
+            <button
               onClick={() => setShowExport(true)}
               className="h-8 px-3 bg-[#A8835F] hover:bg-[#8E6A48] text-white text-[12px] font-medium rounded-lg flex items-center gap-1.5 transition-colors shadow-sm"
             >
@@ -248,7 +462,7 @@ export default function ComposerStudio() {
           style={{ height: '240px' }}
           onMouseEnter={() => setHoverPreview(true)}
           onMouseLeave={() => setHoverPreview(false)}
-          onClick={handlePlayPause}
+          onClick={!composeVideoUrl ? handlePlayPause : undefined}
         >
           <div
             className="relative rounded overflow-hidden"
@@ -256,30 +470,61 @@ export default function ComposerStudio() {
               maxWidth: '420px',
               width: '100%',
               aspectRatio: '16/9',
-              background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+              background: composeVideoUrl ? '#000' : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
             }}
           >
-            {/* Placeholder scene */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-center">
-                <div className="w-16 h-16 rounded-full bg-[#A8835F]/20 flex items-center justify-center mx-auto mb-3">
-                  {isPlaying ? (
-                    <Pause size={28} className="text-[#A8835F]" />
-                  ) : (
-                    <Play size={28} className="text-[#A8835F] ml-1" />
-                  )}
-                </div>
-                <p className="text-[14px] text-white/60 font-medium mb-1">
-                  {videoClips.find(c => c.startTime <= currentTime && currentTime < c.startTime + c.duration)?.name ?? '空白'}
-                </p>
-                <p className="text-[12px] text-white/40 font-mono">{formatTime(currentTime)}</p>
-              </div>
-            </div>
+            {/* Real video player when compose video URL is available */}
+            {composeVideoUrl && (
+              <video
+                ref={videoRef}
+                src={composeVideoUrl}
+                className="absolute inset-0 w-full h-full object-contain"
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+                onTimeUpdate={() => {
+                  if (videoRef.current) {
+                    setCurrentTime(videoRef.current.currentTime);
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (videoRef.current) {
+                    if (videoRef.current.paused) {
+                      videoRef.current.play();
+                    } else {
+                      videoRef.current.pause();
+                    }
+                  }
+                }}
+              />
+            )}
 
-            {/* Scene gradient overlay */}
-            <div className="absolute inset-0 pointer-events-none">
-              <div className="w-full h-full bg-gradient-to-t from-pink-900/20 via-transparent to-blue-900/10" />
-            </div>
+            {/* Placeholder scene when no video URL */}
+            {!composeVideoUrl && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-full bg-[#A8835F]/20 flex items-center justify-center mx-auto mb-3">
+                    {isPlaying ? (
+                      <Pause size={28} className="text-[#A8835F]" />
+                    ) : (
+                      <Play size={28} className="text-[#A8835F] ml-1" />
+                    )}
+                  </div>
+                  <p className="text-[14px] text-white/60 font-medium mb-1">
+                    {videoClips.find(c => c.startTime <= currentTime && currentTime < c.startTime + c.duration)?.name ?? '空白'}
+                  </p>
+                  <p className="text-[12px] text-white/40 font-mono">{formatTime(currentTime)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Scene gradient overlay (only for placeholder) */}
+            {!composeVideoUrl && (
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="w-full h-full bg-gradient-to-t from-pink-900/20 via-transparent to-blue-900/10" />
+              </div>
+            )}
 
             {/* Subtitle overlay */}
             <AnimatePresence>
@@ -408,8 +653,10 @@ export default function ComposerStudio() {
           onSkipBackward={handleSkipBackward}
           onSkipForward={handleSkipForward}
           onSplit={handleSplitAtPlayhead}
-          undoStack={undoStack}
-          redoStack={redoStack}
+          undoStack={undoStack.length}
+          redoStack={redoStack.length}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
         />
 
         {/* Tab switcher at bottom */}
@@ -442,8 +689,10 @@ export default function ComposerStudio() {
         {showExport && (
           <ExportPanel
             onClose={() => setShowExport(false)}
+            projectName={pipelineProjectTitle || undefined}
             totalDuration={totalDuration}
             shotCount={videoClips.length}
+            videoUrl={composeVideoUrl}
           />
         )}
       </AnimatePresence>

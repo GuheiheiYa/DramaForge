@@ -23,8 +23,9 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { useChatStore } from '@/store/useChatStore';
+import { usePipelineStore } from '@/store/usePipelineStore';
 import { cn } from '@/lib/utils';
-import { toastSuccess } from '@/hooks/useToast';
+import { toastSuccess, toastInfo } from '@/hooks/useToast';
 
 interface NavItem {
   label: string;
@@ -43,16 +44,16 @@ const navGroups: NavGroup[] = [
     title: '创作',
     items: [
       { label: '项目工作台', icon: <LayoutGrid size={18} />, path: '/' },
-      { label: '剧本编辑器', icon: <FileText size={18} />, path: '/script', badge: 'unsaved' },
+      { label: '剧本编辑器', icon: <FileText size={18} />, path: '/script' },
       { label: '角色管理台', icon: <Users size={18} />, path: '/characters' },
-      { label: '分镜工作台', icon: <Film size={18} />, path: '/storyboard', badge: 'progress' },
+      { label: '分镜工作台', icon: <Film size={18} />, path: '/storyboard' },
       { label: '成片合成室', icon: <Play size={18} />, path: '/composer' },
     ],
   },
   {
     title: '资源',
     items: [
-      { label: 'SKILL市场', icon: <Puzzle size={18} />, path: '/skills', badge: 'new' },
+      { label: 'SKILL市场', icon: <Puzzle size={18} />, path: '/skills' },
       { label: '素材库', icon: <FolderOpen size={18} />, path: '/assets' },
     ],
   },
@@ -71,6 +72,9 @@ export default function AppSidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
 
+  // Pipeline 状态 — 用于动态 badge
+  const pipelineStatus = usePipelineStore((s) => s.status);
+
   // Chat store
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
@@ -80,6 +84,13 @@ export default function AppSidebar() {
 
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // 动态计算 badge：根据 pipeline 状态
+  const getBadge = (path: string): 'new' | 'unsaved' | 'progress' | undefined => {
+    if (path === '/storyboard' && pipelineStatus === 'running') return 'progress';
+    if (path === '/composer' && pipelineStatus === 'running') return 'progress';
+    return undefined;
+  };
 
   const handleNewSession = () => {
     createSession();
@@ -181,6 +192,7 @@ export default function AppSidebar() {
               {/* Standard nav items */}
               {group.items.map((item) => {
                 const isActive = location.pathname === item.path;
+                const badge = getBadge(item.path);
                 return (
                   <li key={item.path}>
                     <button
@@ -213,13 +225,13 @@ export default function AppSidebar() {
                           {item.label}
                         </motion.span>
                       )}
-                      {!collapsed && item.badge === 'new' && (
+                      {!collapsed && badge === 'new' && (
                         <span className="ml-2 px-1.5 py-0.5 bg-[#F5EDE6] text-[#A8835F] text-[10px] font-medium rounded-full">NEW</span>
                       )}
-                      {!collapsed && item.badge === 'unsaved' && (
+                      {!collapsed && badge === 'unsaved' && (
                         <span className="ml-2 w-2 h-2 rounded-full bg-[#B85C50]" />
                       )}
-                      {!collapsed && item.badge === 'progress' && (
+                      {!collapsed && badge === 'progress' && (
                         <span className="ml-2 w-2 h-2 rounded-full bg-[#5A7FA8] animate-pulse-glow" />
                       )}
                     </button>
@@ -337,7 +349,7 @@ export default function AppSidebar() {
 
       {/* Bottom User Area */}
       <div className="shrink-0 border-t border-[#DEDBD8] p-3">
-        <button className={cn(
+        <div className={cn(
           'w-full flex items-center rounded-md hover:bg-[#F5EDE6] transition-colors h-10',
           collapsed ? 'justify-center px-0' : 'px-3'
         )}>
@@ -357,10 +369,15 @@ export default function AppSidebar() {
           )}
           {!collapsed && (
             <motion.div className="ml-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <Settings size={14} className="text-[#A8A39E]" />
+              <button
+                onClick={() => toastInfo('设置功能开发中')}
+                className="p-1 rounded hover:bg-[#EFEDEB] transition-colors"
+              >
+                <Settings size={14} className="text-[#A8A39E]" />
+              </button>
             </motion.div>
           )}
-        </button>
+        </div>
       </div>
     </motion.aside>
   );

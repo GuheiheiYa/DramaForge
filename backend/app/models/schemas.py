@@ -262,15 +262,21 @@ class PipelineStartRequest(BaseModel):
     creative_input: str = Field(..., min_length=1, description="创作描述")
     mode: PipelineMode = Field(default=PipelineMode.AUTO)
     skill_id: str = Field(default="jp-school")
+    structured_data: dict | None = Field(default=None, description="Chat 预提取的结构化数据")
+    confirmed_plan: str | None = Field(default=None, description="用户已确认的创作方案全文")
 
 
 class PipelineStatusResponse(BaseModel):
     """Pipeline 状态响应。"""
+    pipeline_id: str = ""
+    id: str = ""
     project_id: str
     status: str
     current_step: int
     steps: list[dict]
+    mode: str = "auto"
     error: dict | None = None
+    waiting_confirmation: bool = False
 
 
 # ─── 生成任务 ───

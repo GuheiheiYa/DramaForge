@@ -37,6 +37,58 @@ export const SHOT_TYPE_STYLES: Record<ShotType, ShotTypeStyle> = {
 
 export const SHOT_TYPE_OPTIONS: ShotType[] = ['远景', '全景', '中景', '近景', '特写'];
 
+const SHOT_TYPE_ALIASES: Record<string, ShotType> = {
+  'wide shot': '远景',
+  'long shot': '远景',
+  'full shot': '全景',
+  'medium shot': '中景',
+  'medium close-up': '近景',
+  'close-up': '特写',
+  'close up': '特写',
+  'extreme close-up': '特写',
+};
+
+/** 将后端/LLM 返回的景别规范为前端枚举，避免 SHOT_TYPE_STYLES 取不到导致 .bg 报错 */
+export function normalizeShotType(value: string | null | undefined): ShotType {
+  const raw = (value || '').trim();
+  if (!raw) return '中景';
+  if (raw in SHOT_TYPE_STYLES) return raw as ShotType;
+  const lower = raw.toLowerCase();
+  if (lower in SHOT_TYPE_ALIASES) return SHOT_TYPE_ALIASES[lower];
+  for (const [key, mapped] of Object.entries(SHOT_TYPE_ALIASES)) {
+    if (lower.includes(key)) return mapped;
+  }
+  if (raw.includes('远')) return '远景';
+  if (raw.includes('全')) return '全景';
+  if (raw.includes('特')) return '特写';
+  if (raw.includes('近')) return '近景';
+  return '中景';
+}
+
+export function getShotTypeStyle(shotType: string | null | undefined): ShotTypeStyle {
+  return SHOT_TYPE_STYLES[normalizeShotType(shotType)];
+}
+
+const STATUS_ALIASES: Record<string, ShotStatus> = {
+  done: '已完成',
+  ready: '已完成',
+  completed: '已完成',
+  failed: '失败',
+  error: '失败',
+  generating: '生成中',
+  running: '生成中',
+  waiting: '等待中',
+  draft: '草稿',
+};
+
+export function normalizeShotStatus(value: string | null | undefined): ShotStatus {
+  const raw = (value || '').trim();
+  if (!raw) return '等待中';
+  if (raw in STATUS_COLORS) return raw as ShotStatus;
+  const mapped = STATUS_ALIASES[raw.toLowerCase()];
+  return mapped || '等待中';
+}
+
 export const CAMERA_MOVEMENT_OPTIONS = ['固定', '推', '拉', '摇', '移', '跟', '升', '降', '甩', '晃'];
 export const COMPOSITION_OPTIONS = ['中心构图', '三分法', '对称', '对角线', '框架', '引导线', '留白'];
 export const LIGHTING_OPTIONS = ['自然光', '侧光', '逆光', '柔光', '硬光', '伦勃朗光', '顶光'];

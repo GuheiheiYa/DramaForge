@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Toaster } from 'sonner';
 import SceneTree from './script/SceneTree';
 import ScriptToolbar from './script/ScriptToolbar';
 import ScriptEditorArea from './script/ScriptEditorArea';
@@ -9,7 +8,7 @@ import { episodes as initialEpisodes, getBlocksForEpisode, projectTitle as mockT
 import { useToast, MSG } from '@/hooks/useToast';
 import { useAppStore } from '@/store/useAppStore';
 import type { ScriptBlock, Episode } from './script/types';
-import { getScripts, updateScript, type ScriptData, type EpisodeData } from '@/lib/api';
+import { getScripts, createScript, updateScript, type ScriptData, type EpisodeData } from '@/lib/api';
 import ProjectSelector from '@/components/ProjectSelector';
 
 /** 后端 ScriptData → 前端 Episode[] 转换 */
@@ -27,7 +26,7 @@ function toFrontendEpisodes(script: ScriptData): Episode[] {
       elements: (s.blocks || []).map((b) => ({
         id: b.id || `e_${b.sort_order}`,
         type: (b.type === 'dialogue' || b.type === 'action' || b.type === 'sound' || b.type === 'transition') ? b.type : 'dialogue',
-        label: b.content.slice(0, 20),
+        label: b.content,
         blockId: b.id || '',
       })),
       expanded: false,
@@ -98,14 +97,40 @@ export default function ScriptEditor() {
     [episodes, currentEpisodeId]
   );
 
-  // Load blocks when episode changes
+  // Load blocks when episode changes — 优先从已加载的 episodes 数据中提取 blocks
   useEffect(() => {
+    const ep = episodes.find((e) => e.id === currentEpisodeId);
+    if (ep && ep.scenes.length > 0) {
+      // 从 episodes 状态中提取 blocks（来自 API 或用户编辑）
+      const blocks: ScriptBlock[] = [];
+      for (const scene of ep.scenes) {
+        for (const el of scene.elements || []) {
+          const blockType = (el.type === 'dialogue' || el.type === 'action' || el.type === 'sound' || el.type === 'transition')
+            ? el.type
+            : 'dialogue';
+          blocks.push({
+            id: el.blockId || el.id || `blk_${blocks.length}`,
+            type: blockType as ScriptBlock['type'],
+            content: el.label || '',
+            sceneId: scene.id,
+          });
+        }
+      }
+      if (blocks.length > 0) {
+        setEditorBlocks(blocks);
+        setHistory([blocks]);
+        setHistoryIndex(0);
+        setSaveStatus('saved');
+        return;
+      }
+    }
+    // 仅在 episodes 中无数据时才降级到 mock
     const blocks = getBlocksForEpisode(currentEpisodeId);
     setEditorBlocks(blocks);
     setHistory([blocks]);
     setHistoryIndex(0);
     setSaveStatus('saved');
-  }, [currentEpisodeId]);
+  }, [currentEpisodeId, episodes]);
 
   const wordCount = useMemo(() => {
     return editorBlocks.reduce((acc, block) => acc + block.content.length, 0);
@@ -153,22 +178,11 @@ export default function ScriptEditor() {
   }, [history, historyIndex, info]);
 
   const handleSave = useCallback(() => {
-    if (!scriptId) {
-      // 没有scriptId，模拟保存
-      setSaveStatus('saving');
-      setTimeout(() => {
-        setSaveStatus('saved');
-        success(MSG.saved);
-      }, 600);
-      return;
-    }
-
     setSaveStatus('saving');
-    // 构建保存数据：将 editorBlocks 按 sceneId 分组，放回对应场景
+
     const scenesByEpisode = new Map<string, Map<string, ScriptBlock[]>>();
     for (const block of editorBlocks) {
       const sceneId = block.sceneId || 'default';
-      // 找到这个 scene 属于哪个 episode
       let epId = currentEpisodeId;
       for (const ep of episodes) {
         if (ep.scenes.some((s) => s.id === sceneId)) {
@@ -202,17 +216,45 @@ export default function ScriptEditor() {
       })),
     }));
 
-    updateScript(scriptId, { title, episodes: apiEpisodes })
-      .then(() => {
-        setSaveStatus('saved');
-        success(MSG.saved);
+    const persistScript = (id: string) => {
+      updateScript(id, { title, episodes: apiEpisodes })
+        .then(() => {
+          setSaveStatus('saved');
+          success(MSG.saved);
+        })
+        .catch((err) => {
+          console.error('[ScriptEditor] 保存失败:', err);
+          setSaveStatus('unsaved');
+          info('保存失败，请重试');
+        });
+    };
+
+    if (!scriptId) {
+      if (!selectedProjectId) {
+        setSaveStatus('unsaved');
+        info('请先选择或创建项目');
+        return;
+      }
+      createScript({
+        project_id: selectedProjectId,
+        title,
+        episodes: apiEpisodes,
       })
-      .catch((err) => {
-        console.error('[ScriptEditor] 保存失败:', err);
-        setSaveStatus('saved');
-        success(MSG.saved);
-      });
-  }, [scriptId, title, episodes, editorBlocks, currentEpisodeId, success]);
+        .then((created) => {
+          setScriptId(created.id);
+          setSaveStatus('saved');
+          success(MSG.saved);
+        })
+        .catch((err) => {
+          console.error('[ScriptEditor] 创建剧本失败:', err);
+          setSaveStatus('unsaved');
+          info('创建剧本失败，请重试');
+        });
+      return;
+    }
+
+    persistScript(scriptId);
+  }, [scriptId, selectedProjectId, title, episodes, editorBlocks, currentEpisodeId, success, info]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -348,7 +390,6 @@ export default function ScriptEditor() {
 
   return (
     <>
-      <Toaster position="top-center" />
       <motion.div
         className="flex flex-row h-[calc(100dvh-52px)] overflow-hidden"
         initial={{ opacity: 0 }}

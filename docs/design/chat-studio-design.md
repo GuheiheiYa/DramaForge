@@ -1,8 +1,36 @@
 # [D-001] Chat Studio — 一站式创作指挥中心 设计方案
 
-**关联需求**: [R-012]
-**设计时间**: 2026-06-11 00:00:00
-**状态**: 设计完成，待实现
+**关联需求**: [R-012]  
+**设计时间**: 2026-06-11  
+**最后更新**: 2026-06-17  
+**状态**: **已实现（持续迭代）** — 完整流程见 **[D-004 全流程规格书](pipeline-full-flow-spec.md)**
+
+---
+
+## 0. 实现说明（2026-06-17）
+
+与初版设计相比，当前实现的关键变化：
+
+| 原设计 | 现实现 |
+|--------|--------|
+| 隐藏 JSON 双次 LLM | **单次流式 Markdown 创作方案** |
+| `extractedScript` 主路径 | `creativePlanText` + `planConfirmed` |
+| `simulatePipeline` / setTimeout | `POST /pipeline/start` + SSE |
+| 面板 SSE 仅 Chat 页 | **Layout 级 `PipelineLifecycle`**，切页不断流 |
+| 无全局进度入口 | 右下角 **ProgressPanel** 可跳回 Chat |
+
+**Chat 创作前置状态**（`useChatStore`）：
+
+- `creativePlanText` — 方案全文  
+- `planConfirmed` — 是否已确认  
+- `lastCreationUserMessage` — 重生成用  
+- 消息类型：`plan_confirm_card` → `plan_card` → Pipeline 相关消息  
+
+**面板绑定**（`usePipelineStore` + `pipeline-storage.ts`）：
+
+- `chatSessionId` — 绑定启动 Pipeline 的会话  
+- `projectId` — 绑定项目  
+- `isPipelineBoundToChat` / `isPipelineVisibleForChat` — 可见性规则  
 
 ---
 

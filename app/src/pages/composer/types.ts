@@ -11,6 +11,8 @@ export interface TimelineClip {
   status?: ClipStatus;
   shotRef?: string; // e.g. "镜05"
   color?: string;
+  volume?: number; // 0-100, 0 = muted, default 100
+  videoUrl?: string; // URL for video preview when available
 }
 
 export interface SubtitleSegment {

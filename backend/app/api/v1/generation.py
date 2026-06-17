@@ -1,5 +1,6 @@
 """生成任务路由 — 对接数据库。"""
 
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -25,6 +26,7 @@ async def submit_task(
 ):
     """提交生成任务。"""
     task = GenerationTask(
+        id=uuid.uuid4().hex,
         project_id=data.project_id,
         stage=data.stage,
         skill_id=data.skill_id or "",
@@ -32,7 +34,7 @@ async def submit_task(
         progress=0,
         detail="任务已提交，正在排队处理",
     )
-    await db.add(task)
+    db.add(task)
     await db.commit()
     await db.refresh(task)
 

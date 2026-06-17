@@ -10,6 +10,7 @@ interface ExportPanelProps {
   projectName?: string;
   totalDuration?: number;
   shotCount?: number;
+  videoUrl?: string | null;
 }
 
 const RESOLUTION_OPTIONS: { key: ExportResolution; label: string; pixels: string; desc: string }[] = [
@@ -36,6 +37,7 @@ export default function ExportPanel({
   projectName = '《樱花下的约定》第1集',
   totalDuration = 36,
   shotCount = 8,
+  videoUrl,
 }: ExportPanelProps) {
   const [resolution, setResolution] = useState<ExportResolution>('1080p');
   const [format, setFormat] = useState<ExportFormat>('MP4');
@@ -60,6 +62,19 @@ export default function ExportPanel({
   }, '低');
 
   const handleExport = () => {
+    // If we have a real video URL, trigger download directly
+    if (videoUrl) {
+      const ext = FORMAT_OPTIONS.find(f => f.key === format)?.ext ?? '.mp4';
+      const link = document.createElement('a');
+      link.href = videoUrl;
+      link.download = `${autoFilename}${ext}`;
+      link.click();
+      toastSuccess('导出完成！', `文件已下载为 ${autoFilename}${ext}`);
+      onClose();
+      return;
+    }
+
+    // No real video URL — simulate export process with progress
     setExporting(true);
     setExportProgress(0);
 
@@ -75,7 +90,7 @@ export default function ExportPanel({
 
     setTimeout(() => {
       setExporting(false);
-      toastSuccess('导出完成！', `文件已保存为 ${autoFilename}${FORMAT_OPTIONS.find(f => f.key === format)?.ext}`);
+      toastSuccess('导出完成！', `文件已保存为 ${autoFilename}${FORMAT_OPTIONS.find(f => f.key === format)?.ext}（模拟导出，后端 API 尚未就绪）`);
       onClose();
     }, 5000);
   };
@@ -280,7 +295,9 @@ export default function ExportPanel({
           <div className="flex items-start gap-2 bg-[#F0F3F7] rounded-lg p-3">
             <AlertCircle size={14} className="text-[#5A7FA8] mt-0.5 shrink-0" />
             <p className="text-[11px] text-[#5A7FA8] leading-relaxed">
-              本次导出消耗约 ¥2-5元 API额度。导出完成后将自动触发下载。
+              {videoUrl
+                ? '将直接下载已合成的视频文件。如需重新合成，请先在流水线中完成合成步骤。'
+                : '后端合成 API 尚未就绪，当前为模拟导出。完成流水线合成步骤后，可导出真实视频文件。'}
             </p>
           </div>
         </div>
