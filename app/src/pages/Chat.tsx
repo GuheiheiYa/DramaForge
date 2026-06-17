@@ -434,7 +434,7 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
               <ReactMarkdown>{message.content}</ReactMarkdown>
             ) : message.isStreaming && !hasThinking ? (
               <span className="inline-flex items-center gap-1 text-[12px] text-[#A8A39E]">
-                <Loader2 size={12} className="animate-spin" /> 思考中...
+                <Loader2 size={12} className="animate-spin" />
               </span>
             ) : (
               <span className="whitespace-pre-wrap">{message.content}</span>
