@@ -1,5 +1,24 @@
 # 更新日志
 
+## 2026-06-17 09:40:00 — Chat 两次 LLM 调用：数据生成 + 用户回复分离
+
+**需求**: [R-051], [R-012]
+**设计**: 方案 A（前端两次 fetch）
+**修改文件**:
+- `app/src/store/useChatStore.ts` — 新增 pipelineStage 状态，sendMessage 拆分为两次调用
+- `app/src/pages/Chat.tsx` — TypingIndicator 显示分析/回复阶段
+
+**变更摘要**:
+- 创作请求改为两次 LLM 调用：
+  - 第一次：非流式 /pipeline/chat，System Prompt 要求只输出 JSON（剧本+角色+分镜）
+  - 第二次：流式 /pipeline/chat/stream，携带结构化数据作为上下文生成面向用户的回复
+- 新增 pipelineStage 状态：'analyzing' | 'replying' | null，控制加载提示文案
+- 移除 System Prompt 中的 <pipeline_data> 要求（不再让 AI 在回复中嵌入 JSON）
+- finishStream 不再重复提取数据（数据已在第一次调用中提取）
+- 新增辅助函数：parseJSONFromReply、jsonToScript、jsonToCharacters、jsonToStoryboard
+
+---
+
 ## 2026-06-16 20:30:00 — R-052 Pipeline 真实 API 调用（替代 setTimeout 模拟）
 
 **需求**: [R-052], [R-053]

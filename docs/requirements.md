@@ -139,7 +139,7 @@
 
 | ID | 需求描述 | 优先级 | 状态 | 关联 | 备注 |
 |----|---------|--------|------|------|------|
-| R-051 | AI 回复结构化 JSON 提取（替代正则） | P0 | ✅ | [D-003] | System Prompt 要求输出 `<pipeline_data>` JSON + extractFromAIReply 两层策略 |
+| R-051 | AI 回复结构化 JSON 提取（替代正则） | P0 | ✅ | [D-003] | 两次调用分离：第一次非流式生成 JSON 数据，第二次流式生成用户回复 |
 | R-052 | 前端 Pipeline 真实 API 调用（替代 simulatePipeline） | P0 | ✅ | [D-003] | simulatePipeline 改为 async，步骤 1-3 保存数据库，步骤 4 调 Agnes 视频 API |
 | R-053 | 后端 Pipeline 异步执行 + SSE 进度推送 | P0 | 🔄 | [D-003] | 前端已真实调用 API，后端 SSE 推送待后续实现 |
 | R-054 | 三种执行模式区分（auto/confirm/preview） | P0 | ⏳ | [D-003] | auto 全自动，confirm 每步暂停等确认，preview 只提取不生成 |

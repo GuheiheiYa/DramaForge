@@ -468,7 +468,8 @@ function MessageBubble({ message, onModeSelect }: { message: ChatMessage; onMode
   );
 }
 
-function TypingIndicator() {
+function TypingIndicator({ stage }: { stage?: 'analyzing' | 'replying' | null }) {
+  const label = stage === 'analyzing' ? '正在分析创意，生成项目数据...' : stage === 'replying' ? 'AI 正在回复...' : 'AI思考中...';
   return (
     <div className="flex gap-3 pl-12">
       <div className="bg-white rounded-2xl rounded-bl-sm shadow-sm border border-[#EFEDEB] px-5 py-4">
@@ -477,7 +478,7 @@ function TypingIndicator() {
             <motion.div key={i} className="w-2.5 h-2.5 rounded-full bg-gradient-to-br from-[#A8835F] to-[#8E6A48]"
               animate={{ opacity: [0.3, 1, 0.3], y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut', delay: i * 0.2 }} />
           ))}
-          <span className="text-[11px] text-[#A8A39E] ml-2">AI思考中...</span>
+          <span className="text-[11px] text-[#A8A39E] ml-2">{label}</span>
         </div>
       </div>
     </div>
@@ -972,6 +973,7 @@ export default function Chat() {
   const currentSession = useChatStore((s) => s.getCurrentSession());
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isGenerating = useChatStore((s) => s.isGenerating);
+  const pipelineStage = useChatStore((s) => s.pipelineStage);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const createSession = useChatStore((s) => s.createSession);
 
@@ -1219,7 +1221,7 @@ export default function Chat() {
                 <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
                     {allMessages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
-                    {isGenerating && <TypingIndicator />}
+                    {isGenerating && <TypingIndicator stage={pipelineStage} />}
                     <div ref={messagesEndRef} />
                   </div>
                 </div>
@@ -1237,7 +1239,7 @@ export default function Chat() {
               {currentSessionId && messages.length > 0 ? (
                 <div className="max-w-[880px] mx-auto px-4 md:px-6 py-6 space-y-6">
                   {messages.map((msg) => <MessageBubble key={msg.id} message={msg} onModeSelect={handleModeSelect} />)}
-                  {isGenerating && <TypingIndicator />}
+                  {isGenerating && <TypingIndicator stage={pipelineStage} />}
                   <div ref={messagesEndRef} />
                 </div>
               ) : (

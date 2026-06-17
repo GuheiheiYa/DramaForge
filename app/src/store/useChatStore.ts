@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import {
-  extractFromAIReply,
   extractProjectTitle,
 } from '@/lib/pipeline-data-extractor';
 import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
@@ -85,6 +84,7 @@ interface ChatState {
   currentSkill: string;
   isGenerating: boolean;
   deepThink: boolean;
+  pipelineStage: 'analyzing' | 'replying' | null;  // 两次调用的阶段
   // Pipeline 相关 — 从 AI 回复中提取的数据
   extractedScript: ScriptData | null;
   extractedCharacters: CharacterData | null;
@@ -117,6 +117,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentSkill: defaultSkill,
   isGenerating: false,
   deepThink: false,
+  pipelineStage: null,
   extractedScript: null,
   extractedCharacters: null,
   extractedTitle: '',
@@ -218,63 +219,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const systemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
 你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
-回复要详细、专业、有创意。
-
-【重要】当用户要求生成剧本、角色、分镜等创作内容时，在回复末尾追加一个 \`<pipeline_data>\` JSON 块，格式如下：
-\`\`\`<pipeline_data>
-{
-  "title": "项目标题",
-  "episodes": [
-    {
-      "number": 1,
-      "title": "集标题",
-      "scenes": [
-        {
-          "title": "场景名",
-          "location": "地点",
-          "time_tag": "时间（清晨/上午/下午/傍晚/夜晚等）",
-          "summary": "场景摘要描述"
-        }
-      ]
-    }
-  ],
-  "characters": [
-    {
-      "name": "角色名",
-      "role": "主角/配角/龙套",
-      "gender": "男/女",
-      "age": 18,
-      "description": "角色简介",
-      "personality": "性格描述",
-      "personality_traits": ["特征1", "特征2"],
-      "appearance": "外貌描述",
-      "costume": "服装描述"
-    }
-  ]
-}
-\`\`\`</pipeline_data>
-
-确保 JSON 格式正确，episode/scene/character 数量根据内容实际需要设定。`;
+回复要详细、专业、有创意。`;
 
     const abortController = new AbortController();
     currentAbortController = abortController;
 
-    // Pre-compute whether this is a creation request
+    // 判断是否为创作请求
     const isCreationReq = CREATION_KEYWORDS.some((kw) => content.trim().includes(kw));
 
-    fetchStreamResponse(
-      sessionId,
-      aiMsgId,
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: content.trim() },
-      ],
-      provider,
-      state.deepThink,
-      abortController.signal,
-      isCreationReq,
-      content.trim().slice(0, 20),
-    );
+    if (isCreationReq) {
+      // ── 两次调用模式 ──
+      runCreationPipeline(sessionId, aiMsgId, content.trim(), provider, state.deepThink, abortController.signal);
+    } else {
+      // ── 普通对话：单次流式调用 ──
+      fetchStreamResponse(
+        sessionId,
+        aiMsgId,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: content.trim() },
+        ],
+        provider,
+        state.deepThink,
+        abortController.signal,
+      );
+    }
   },
 
   cancelGeneration: () => {
@@ -284,7 +253,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set((s) => {
       const sessionId = s.currentSessionId;
-      if (!sessionId) return { isGenerating: false };
+      if (!sessionId) return { isGenerating: false, pipelineStage: null };
       // 检查最后一条用户消息是否匹配创作关键词
       const session = s.sessions.find((ss) => ss.id === sessionId);
       const lastUser = session ? [...session.messages].reverse().find((m) => m.role === 'user') : null;
@@ -311,6 +280,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return {
         isGenerating: false,
+        pipelineStage: null,
         sessions: s.sessions.map((ss) => {
           if (ss.id !== sessionId) return ss;
           return {
@@ -456,6 +426,244 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
+// ─── 两次调用：数据生成 + 用户回复 ───
+
+const API_BASE = 'http://localhost:7779/api/v1';
+
+/**
+ * 创作请求的两次 LLM 调用流程：
+ * 1. 第一次：非流式，只生成结构化 JSON 数据（剧本+角色+分镜）
+ * 2. 第二次：流式，基于数据生成面向用户的回复
+ */
+async function runCreationPipeline(
+  sessionId: string,
+  aiMsgId: string,
+  userMessage: string,
+  provider: string,
+  deepThink: boolean,
+  signal: AbortSignal,
+) {
+  const state = useChatStore.getState();
+  const skillConfig = skillToConfig[state.currentSkill] || skillToConfig['jp-school'];
+  const projectTitle = extractProjectTitle(userMessage);
+
+  // 更新加载状态
+  useChatStore.setState({ pipelineStage: 'analyzing' });
+
+  // 更新 AI 消息为加载状态
+  const updateAIContent = (content: string) => {
+    useChatStore.setState((s) => ({
+      sessions: s.sessions.map((ss) => {
+        if (ss.id !== sessionId) return ss;
+        return {
+          ...ss,
+          messages: ss.messages.map((m) =>
+            m.id === aiMsgId ? { ...m, content } : m
+          ),
+        };
+      }),
+    }));
+  };
+
+  updateAIContent('');
+
+  // ═══ 第一次调用：生成结构化数据（非流式） ═══
+  const dataPrompt = `你是一个专业的漫剧/短剧编剧。风格要求：${skillConfig.prompt}
+
+请根据以下创意，生成完整的结构化项目数据。只输出 JSON，不要其他内容。
+
+JSON 格式：
+{
+  "title": "项目标题",
+  "episodes": [
+    {
+      "number": 1,
+      "title": "集标题",
+      "scenes": [
+        {
+          "title": "场景名",
+          "location": "地点",
+          "time_tag": "时间（清晨/上午/下午/傍晚/夜晚等）",
+          "summary": "场景摘要描述（2-3句话）"
+        }
+      ]
+    }
+  ],
+  "characters": [
+    {
+      "name": "角色名",
+      "role": "主角/配角/龙套",
+      "gender": "男/女",
+      "age": 18,
+      "description": "角色简介",
+      "personality": "性格描述",
+      "personality_traits": ["特征1", "特征2"],
+      "appearance": "外貌描述",
+      "costume": "服装描述"
+    }
+  ],
+  "storyboard": [
+    {
+      "shot_number": 1,
+      "episode_number": 1,
+      "scene_title": "对应场景名",
+      "description": "英文镜头描述，用于AI图像生成",
+      "shot_type": "全景/中景/近景/特写",
+      "duration": 5,
+      "camera_movement": "固定/推/拉/摇/移"
+    }
+  ]
+}
+
+要求：
+- episodes 数量根据内容需要设定（通常 3-8 集）
+- 每集 2-4 个场景
+- characters 至少包含 2-3 个角色
+- storyboard 至少 6-10 个镜头
+- description 字段用英文（用于后续 AI 图像生成）
+- 只输出 JSON，不要其他文字`;
+
+  let structuredData: Record<string, unknown> | null = null;
+
+  try {
+    const resp = await fetch(`${API_BASE}/pipeline/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: dataPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        model: provider,
+        deep_think: deepThink,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`数据生成失败 (${resp.status})`);
+    const data = await resp.json();
+    const reply = data.reply || '';
+
+    // 解析 JSON
+    structuredData = parseJSONFromReply(reply);
+    console.log('[Pipeline] 第一次调用完成, 数据:', structuredData ? '解析成功' : '解析失败');
+  } catch (err) {
+    console.error('[Pipeline] 第一次调用失败:', err);
+    // 继续执行第二次调用，但不带数据
+  }
+
+  // 保存结构化数据到 store
+  if (structuredData) {
+    const scriptResult = jsonToScript(structuredData, projectTitle);
+    const charResult = jsonToCharacters(structuredData);
+    const shotsResult = jsonToStoryboard(structuredData);
+
+    useChatStore.setState({
+      extractedScript: { episodes: scriptResult },
+      extractedCharacters: { characters: charResult },
+      extractedTitle: structuredData.title as string || projectTitle,
+    });
+
+    console.log('[Pipeline] 数据已保存:', {
+      episodes: scriptResult.length,
+      characters: charResult.length,
+      shots: shotsResult.length,
+    });
+  }
+
+  // ═══ 第二次调用：生成用户可见回复（流式） ═══
+  useChatStore.setState({ pipelineStage: 'replying' });
+
+  let contextHint = '';
+  if (structuredData) {
+    const epCount = (structuredData.episodes as unknown[])?.length || 0;
+    const charCount = (structuredData.characters as unknown[])?.length || 0;
+    const shotCount = (structuredData.storyboard as unknown[])?.length || 0;
+    contextHint = `\n\n[系统提示：你已经为用户生成了以下项目数据，${epCount} 集剧本、${charCount} 个角色、${shotCount} 个分镜镜头。请基于这些数据，给用户一段精炼、有感染力的项目概览回复。不要输出 JSON。]`;
+  }
+
+  const replySystemPrompt = `你是一个专业的AI漫剧/短剧创作助手。当前风格：${skillConfig.prompt}。
+你可以帮助用户：生成剧本创意、设计角色、规划分镜、优化对话、描写场景。
+回复要详细、专业、有创意。${contextHint}`;
+
+  fetchStreamResponse(
+    sessionId,
+    aiMsgId,
+    [
+      { role: 'system', content: replySystemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    provider,
+    deepThink,
+    signal,
+    true,  // isCreationRequest = true
+    projectTitle,
+  );
+}
+
+// ─── JSON 解析辅助函数 ───
+
+function parseJSONFromReply(text: string): Record<string, unknown> | null {
+  // 尝试直接解析
+  try { return JSON.parse(text); } catch { /* continue */ }
+  // 提取 ```json ... ``` 代码块
+  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlock) { try { return JSON.parse(codeBlock[1].trim()); } catch { /* continue */ } }
+  // 提取 { ... }
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) { try { return JSON.parse(jsonMatch[0]); } catch { /* continue */ } }
+  return null;
+}
+
+function jsonToScript(data: Record<string, unknown>, fallbackTitle: string) {
+  const episodes = (data.episodes as unknown[]) || [];
+  return episodes.map((ep: Record<string, unknown>, i: number) => ({
+    id: `ep${ep.number || i + 1}`,
+    number: (ep.number as number) || i + 1,
+    title: (ep.title as string) || `第${i + 1}集`,
+    scenes: ((ep.scenes as unknown[]) || []).map((s: Record<string, unknown>, j: number) => ({
+      id: `s${j + 1}`,
+      title: (s.title as string) || `场景${j + 1}`,
+      summary: (s.summary as string) || '',
+      location: (s.location as string) || '未指定',
+      timeTag: (s.time_tag as string) || '日间',
+    })),
+  }));
+}
+
+function jsonToCharacters(data: Record<string, unknown>) {
+  const characters = (data.characters as unknown[]) || [];
+  const AVATAR_COLORS = ['#A8835F', '#5A7FA8', '#7A6B8A', '#5B8C5A', '#B85C50', '#C49A3C'];
+  return characters.map((c: Record<string, unknown>, i: number) => ({
+    id: `char_${i + 1}`,
+    name: (c.name as string) || `角色${i + 1}`,
+    role: (['主角', '配角', '龙套'].includes(c.role as string) ? c.role : i < 2 ? '主角' : '配角') as '主角' | '配角' | '龙套',
+    description: (c.description as string) || '',
+    gender: (c.gender as string) || '',
+    age: (c.age as number) || 0,
+    personality: (c.personality as string) || '',
+    personalityTraits: (c.personality_traits as string[]) || [],
+    appearance: (c.appearance as string) || '',
+    costume: (c.costume as string) || '',
+    status: 'done' as const,
+    avatarColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+  }));
+}
+
+function jsonToStoryboard(data: Record<string, unknown>) {
+  const shots = (data.storyboard as unknown[]) || [];
+  return shots.map((s: Record<string, unknown>, i: number) => ({
+    id: `shot_${i + 1}`,
+    shotNumber: (s.shot_number as number) || i + 1,
+    episodeNumber: (s.episode_number as number) || 1,
+    sceneTitle: (s.scene_title as string) || '',
+    description: (s.description as string) || '',
+    shotType: (s.shot_type as string) || '中景',
+    duration: (s.duration as number) || 5,
+    cameraMovement: (s.camera_movement as string) || '固定',
+    status: 'done' as const,
+  }));
+}
+
 // ─── Streaming fetch ───
 async function fetchStreamResponse(
   sessionId: string,
@@ -496,6 +704,7 @@ async function fetchStreamResponse(
       const cleanedContent = finalContent.replace(/<pipeline_data>[\s\S]*?<\/pipeline_data>/, '').trim();
       return {
         isGenerating: false,
+        pipelineStage: null,
         sessions: s.sessions.map((ss) => {
           if (ss.id !== sessionId) return ss;
           return {
@@ -509,27 +718,10 @@ async function fetchStreamResponse(
     });
     currentAbortController = null;
 
-    // Second: if creation request, inject plan card (separate setState to avoid race)
+    // Second: if creation request, inject plan card
+    // 注意：结构化数据已在 runCreationPipeline 的第一次调用中提取，这里不再重复提取
     if (isCreationRequest) {
-      // 从 AI 回复中提取结构化数据（JSON 优先 → 正则回退 → 默认值）
-      const title = extractProjectTitle(projectTitle);
-      const result = extractFromAIReply(finalContent, title);
-
-      console.log('[Pipeline] 提取数据 (source=' + result.source + '):', {
-        title: result.title,
-        contentLength: finalContent.length,
-        episodesCount: result.script.episodes.length,
-        episodes: result.script.episodes.map(ep => ({ num: ep.number, title: ep.title, scenes: ep.scenes.length })),
-        charactersCount: result.characters.length,
-        characters: result.characters.map(c => ({ name: c.name, role: c.role, desc: c.description.slice(0, 30) })),
-      });
-
-      // 更新 store 中的提取数据
-      useChatStore.setState({
-        extractedScript: { episodes: result.script.episodes },
-        extractedCharacters: { characters: result.characters },
-        extractedTitle: result.title,
-      });
+      const title = useChatStore.getState().extractedTitle || extractProjectTitle(projectTitle);
 
       setTimeout(() => {
         const planCardMsg: ChatMessage = {
