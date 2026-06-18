@@ -6,7 +6,6 @@
 DramaForge/
 ├── app/                          # 前端应用 (React + Vite)
 │   ├── public/                   # 静态资源
-│   │   └── mockup.html           # Chat Studio 设计 mockup
 ├── backend/                      # 后端应用 (Python + FastAPI)
 │   ├── app/
 │   │   ├── api/v1/               # API 路由
@@ -78,8 +77,6 @@ DramaForge/
 │   ├── package.json
 │   ├── tailwind.config.js
 │   └── vite.config.ts
-├── AI漫剧Agent调研/               # 技术调研文档
-│   └── ai_drama_agent_research.md
 ├── docs/                         # 项目文档
 │   ├── requirements.md           # 需求文档
 │   ├── features.md               # 功能文档

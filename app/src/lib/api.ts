@@ -3,6 +3,7 @@
  */
 
 import { API_BASE, API_ORIGIN } from '@/lib/config';
+import { normalizeProjectName, sanitizeSurrogates } from '@/lib/text-sanitize';
 
 export { API_BASE, API_ORIGIN };
 
@@ -54,7 +55,11 @@ export const createProject = (data: {
   skill_name?: string;
 }) => request<ProjectData>('/projects', {
   method: 'POST',
-  body: JSON.stringify(data),
+  body: JSON.stringify({
+    ...data,
+    name: normalizeProjectName(data.name, 200),
+    description: data.description ? sanitizeSurrogates(data.description) : data.description,
+  }),
 });
 
 export const getProject = (id: string) => request<ProjectData>(`/projects/${id}`);

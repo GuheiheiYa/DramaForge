@@ -36,6 +36,11 @@ backend/uploads/
 
 # Database
 backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+
+# Local AI / IDE artifacts
+.claude/
 
 # Python
 .pytest_cache/

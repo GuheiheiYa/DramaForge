@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,7 @@ from pathlib import Path
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
+from app.utils.text_sanitize import sanitize_unicode
 from app.api.v1 import projects, scripts, characters, storyboards, generation, skills, pipeline, assets, costs, notifications, images, videos, timeline
 from app.database import init_db
 
@@ -50,6 +52,21 @@ async def integrity_error_handler(_request: Request, exc: IntegrityError):
         status_code=409,
         content={"detail": "数据关联冲突，操作无法完成"},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_request: Request, exc: RequestValidationError):
+    """422 响应中清理无效 Unicode，避免 jsonable_encoder 二次 500。"""
+    safe_errors = []
+    for err in exc.errors():
+        item = dict(err)
+        raw_input = item.get("input")
+        if isinstance(raw_input, str):
+            item["input"] = sanitize_unicode(raw_input)[:200]
+        elif raw_input is not None:
+            item["input"] = "[invalid input]"
+        safe_errors.append(item)
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
 
 # 注册路由
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["项目管理"])

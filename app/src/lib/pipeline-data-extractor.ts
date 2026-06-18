@@ -9,6 +9,7 @@
  */
 
 import type { ScriptData, CharacterData } from '@/store/usePipelineStore';
+import { normalizeProjectName } from '@/lib/text-sanitize';
 
 // ─── 类型 ───
 
@@ -155,22 +156,11 @@ function parseEpisodeNum(raw: string): number {
 // ─── 提取函数 ───
 
 /**
- * 从用户输入中提取项目标题。
- * 示例: "帮我做一个校园悬疑漫剧" → "校园悬疑漫剧"
+ * 从用户输入或创作方案 Markdown 中提取项目标题。
+ * 示例: "# 《最后一块拼图》创作方案" → "最后一块拼图"
  */
 export function extractProjectTitle(userInput: string): string {
-  // 移除常见的前缀动词
-  const cleaned = userInput
-    .replace(/^(帮我|给我|请|麻烦)\s*(做|生成|创作|制作|写|设计)\s*(一个|一部)?\s*/u, '')
-    .trim();
-
-  // 如果清理后有内容，取前 20 字符
-  if (cleaned.length > 0) {
-    return cleaned.slice(0, 20);
-  }
-
-  // 回退：取原始输入的前 20 字符
-  return userInput.slice(0, 20);
+  return normalizeProjectName(userInput, 30);
 }
 
 /**

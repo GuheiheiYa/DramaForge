@@ -2,7 +2,9 @@
 
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.utils.text_sanitize import normalize_project_name, sanitize_unicode
 
 
 # ─── 枚举 ───
@@ -37,6 +39,21 @@ class ProjectCreate(BaseModel):
     episodes: int = Field(default=8, ge=1, le=100, description="总集数")
     skill_id: str = Field(default="", description="SKILL ID")
     skill_name: str = Field(default="", description="SKILL 名称")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_name(cls, value):
+        if not isinstance(value, str):
+            return value
+        name = normalize_project_name(value, max_len=200)
+        return name or "未命名项目"
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _sanitize_description(cls, value):
+        if isinstance(value, str):
+            return sanitize_unicode(value)
+        return value
 
 
 class ProjectUpdate(BaseModel):
